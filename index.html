@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1b86c4" />
+  <meta name="description" content="Pool-Planer in 3D: Form, Maße, Farbe, Treppe, Terrasse und Abdeckung wählen und den Pool per AR im eigenen Garten ansehen." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%273%27 y=%278%27 width=%2726%27 height=%2716%27 rx=%275%27 fill=%27%231b86c4%27/%3E%3Cpath d=%27M6 17c3-3 5 3 8 0s5 3 8 0 3-1 4 0%27 stroke=%27%23fff%27 stroke-width=%272%27 fill=%27none%27/%3E%3C/svg%3E" />
+  <title>Pool-Planer 3D</title>
+  <style>
+    :root {
+      --bg: #e9eef1; --panel: rgba(255,255,255,.92); --ink: #14212b; --muted: #5a6b78;
+      --line: rgba(20,33,43,.13); --accent: #1b86c4; --accent-ink: #fff;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0f171c; --panel: rgba(21,30,36,.92); --ink: #e6eef3; --muted: #9db0bd; --line: rgba(230,238,243,.15); --accent: #3fa7e0; --accent-ink: #04141f; }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); overflow: hidden; }
+    canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.14); }
+    button, .btn { font: inherit; font-size: 13px; color: var(--ink); background: transparent; border: 0; padding: 8px 11px; cursor: pointer; min-height: 36px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    button:hover { background: rgba(127,127,127,.12); }
+    button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+    button.solid, .btn.solid { background: var(--accent); color: var(--accent-ink); border-radius: 10px; font-weight: 600; padding: 8px 14px; }
+    button.ghost { border: 1px solid var(--line); border-radius: 10px; }
+    button:disabled { opacity: .45; cursor: default; }
+    .seg { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .seg button { flex: 1 1 auto; }
+    .seg button + button { border-left: 1px solid var(--line); }
+
+    #cfg { top: max(14px, env(safe-area-inset-top)); left: 14px; bottom: 14px; width: 330px; display: flex; flex-direction: column; overflow: hidden; }
+    #head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+    #brand-logo { max-height: 34px; max-width: 90px; object-fit: contain; border-radius: 6px; background: #fff; padding: 2px 4px; }
+    #brand-eyebrow { display: block; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+    #brand-name { font-size: 19px; margin: 1px 0 0; letter-spacing: -.01em; font-weight: 700; }
+    #b-panel { display: none; margin-left: auto; border: 1px solid var(--line); border-radius: 10px; }
+    #body { overflow-y: auto; padding: 4px 16px 16px; flex: 1; overscroll-behavior: contain; }
+    .sec { margin-top: 14px; }
+    .sec > label, .sec > .lab { display: flex; justify-content: space-between; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    .sec > label output { text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+    input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0 8px; }
+    .sw { width: 38px; height: 38px; min-height: 0; padding: 0; border-radius: 50%; background: var(--c); border: 2px solid var(--line); margin-right: 8px; }
+    .sw[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--panel) inset; background: var(--c); }
+    .sw:hover { background: var(--c); }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 14px 0 0; font-size: 13px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+    dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+    #foot { padding: 8px 16px 12px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
+    #actions { top: max(14px, env(safe-area-inset-top)); right: 14px; display: flex; gap: 8px; background: none; border: 0; box-shadow: none; }
+    #actions button { border-radius: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.18); min-height: 42px; padding: 8px 16px; }
+    #actions button.ghost { background: var(--panel); }
+    #toast { top: 70px; left: 50%; transform: translateX(-50%); padding: 10px 14px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 30; }
+    #toast.show { opacity: 1; }
+    #loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); font-size: 14px; color: var(--muted); transition: opacity .5s; z-index: 40; }
+    #loading.done { opacity: 0; pointer-events: none; }
+    #modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(6,12,16,.5); z-index: 20; padding: 16px; }
+    #modal[hidden] { display: none; }
+    #modal-body.card { position: static; padding: 20px; max-width: 400px; width: 100%; text-align: center; }
+    #modal-body h2 { font-size: 17px; margin: 0 0 12px; } #modal-body p { font-size: 13.5px; line-height: 1.5; color: var(--muted); margin: 10px 0; } #modal-body p.small { font-size: 12px; }
+    .sum { list-style: none; padding: 0; margin: 0; text-align: left; font-size: 13.5px; line-height: 1.7; } .sum li { border-bottom: 1px solid var(--line); }
+    .qr { width: 200px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 6px; } .qr svg { display: block; width: 100%; height: auto; }
+    .status { display: flex; align-items: center; gap: 10px; justify-content: center; font-size: 13px; margin: 12px 0; min-height: 22px; }
+    .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: sp .8s linear infinite; flex: none; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    .row { display: flex; gap: 10px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+
+    @media (max-width: 760px) {
+      #cfg { top: auto; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: 52vh; }
+      #cfg.collapsed { max-height: none; } #cfg.collapsed #body, #cfg.collapsed #foot { display: none; }
+      #b-panel { display: inline-flex; }
+      #head { border-bottom: 0; padding: 10px 12px; } #cfg:not(.collapsed) #head { border-bottom: 1px solid var(--line); }
+      #brand-name { font-size: 16px; }
+      #actions { top: max(10px, env(safe-area-inset-top)); right: 10px; } #actions button { min-height: 40px; padding: 6px 12px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <section id="cfg" class="panel" aria-label="Konfiguration">
+    <div id="head">
+      <img id="brand-logo" alt="" hidden />
+      <div><span id="brand-eyebrow">3D-Konfigurator</span><h1 id="brand-name">Pool-Planer</h1></div>
+      <button id="b-panel" aria-expanded="true">Konfigurieren ▾</button>
+    </div>
+    <div id="body">
+      <div class="sec"><div class="lab">Beckenform</div><div class="seg" id="o-shape"></div></div>
+      <div class="sec"><div class="lab">Größe (Länge × Breite)</div><div class="seg" id="o-preset"></div></div>
+      <div class="sec"><label for="s-length">Länge <output id="v-length"></output></label><input id="s-length" type="range" min="3" max="16" step="0.5" />
+        <label for="s-width">Breite <output id="v-width"></output></label><input id="s-width" type="range" min="2" max="6.5" step="0.25" />
+        <label for="s-depth">Tiefe <output id="v-depth"></output></label><input id="s-depth" type="range" min="1" max="2.4" step="0.1" /></div>
+      <dl><dt>Maße</dt><dd id="d-size"></dd><dt>Tiefe</dt><dd id="d-depth"></dd><dt>Wasserfläche</dt><dd id="d-area"></dd><dt>Wasserinhalt</dt><dd id="d-vol"></dd></dl>
+      <div class="sec"><div class="lab">Beckenfarbe</div><div id="o-liner"></div></div>
+      <div class="sec"><div class="lab">Treppe</div><div class="seg" id="o-steps"></div></div>
+      <div class="sec"><div class="lab">Beckenrand</div><div class="seg" id="o-coping"></div></div>
+      <div class="sec"><div class="lab">Terrasse</div><div class="seg" id="o-deck"></div></div>
+      <div class="sec"><div class="lab">Abdeckung</div><div class="seg" id="o-cover"></div></div>
+      <div class="sec"><div class="lab">Tageszeit</div><div class="seg" id="o-time"></div></div>
+      <div class="sec"><div class="lab">Ansicht</div><div class="seg" id="o-views"></div></div>
+    </div>
+    <div id="foot">Unverbindliche Visualisierung – Maße und Ausführung laut Angebot.</div>
+  </section>
+
+  <section id="actions" class="panel"><button class="ghost" id="b-ask">Anfrage senden</button><button class="solid" id="b-ar">Im Garten ansehen (AR)</button></section>
+
+  <div id="toast" class="panel" role="status"></div>
+  <div id="modal" hidden><div id="modal-body" class="panel card"></div></div>
+  <div id="loading">Pool wird erzeugt …</div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
