@@ -46,30 +46,22 @@ export function loadHDRI(name) {
   return hdriCache.get(name);
 }
 
-/** Sonne bzw. Mond im Panorama finden: Richtung (Einheitsvektor in HDRI-Koordinaten, y oben) und Farbe. */
+/** Sonne bzw. Mond im Panorama finden: Richtung (Einheitsvektor in HDRI-Koordinaten, y oben) und Farbe. Abtastung in Schritten, ohne Objekt-Allokation. */
 function findSun(t) {
-  const { data, width: w, height: h } = t.image, half = data instanceof Uint16Array, f = half ? THREE.DataUtils.fromHalfFloat : (v) => v;
+  const { data, width: w, height: h } = t.image, half = data instanceof Uint16Array, f = half ? THREE.DataUtils.fromHalfFloat : (v) => v, step = 4;
   const lum = (i) => 0.2126 * f(data[i]) + 0.7152 * f(data[i + 1]) + 0.0722 * f(data[i + 2]);
   let max = 0;
-  const step = 2;
-  for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) max = Math.max(max, lum((y * w + x) * 4));
-  const dir = new THREE.Vector3(), col = new THREE.Color(); let sum = 0;
+  for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) { const l = lum((y * w + x) * 4); if (l > max) max = l; }
   // Die Sonne liegt über dem Horizont: die Zeilenreihenfolge so wählen, dass die Höhe positiv ist
-  let upper = 0, lower = 0;
-  const acc = [new THREE.Vector3(), new THREE.Vector3()];
+  const ax = [0, 0], ay = [0, 0], az = [0, 0]; let sum = 0, upper = 0, lower = 0, cr = 0, cg = 0, cb = 0;
   for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) {
-    const i = (y * w + x) * 4, l = lum(i);
-    if (l < max * 0.35) continue;
-    const lon = (x / w - 0.5) * Math.PI * 2, rowFromTop = y / h;
-    for (let k = 0; k < 2; k++) {
-      const lat = (k === 0 ? 0.5 - rowFromTop : rowFromTop - 0.5) * Math.PI;
-      acc[k].add(new THREE.Vector3(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)).multiplyScalar(l));
-    }
-    sum += l; col.r += f(data[i]) * l; col.g += f(data[i + 1]) * l; col.b += f(data[i + 2]) * l;
-    if (rowFromTop < 0.5) upper += l; else lower += l;
+    const i = (y * w + x) * 4, l = lum(i); if (l < max * 0.35) continue;
+    const lon = (x / w - 0.5) * Math.PI * 2, row = y / h, cl = Math.cos(lon), sl = Math.sin(lon);
+    for (let k = 0; k < 2; k++) { const lat = (k === 0 ? 0.5 - row : row - 0.5) * Math.PI, c = Math.cos(lat); ax[k] += c * cl * l; ay[k] += Math.sin(lat) * l; az[k] += c * sl * l; }
+    sum += l; cr += f(data[i]) * l; cg += f(data[i + 1]) * l; cb += f(data[i + 2]) * l; if (row < 0.5) upper += l; else lower += l;
   }
-  dir.copy(acc[upper >= lower ? 0 : 1]).normalize();
-  col.multiplyScalar(1 / Math.max(sum, 1e-6)); const m = Math.max(col.r, col.g, col.b, 1e-6); col.multiplyScalar(1 / m);
+  const k = upper >= lower ? 0 : 1, dir = new THREE.Vector3(ax[k], ay[k], az[k]).normalize();
+  const col = new THREE.Color(cr / Math.max(sum, 1e-6), cg / Math.max(sum, 1e-6), cb / Math.max(sum, 1e-6)); col.multiplyScalar(1 / Math.max(col.r, col.g, col.b, 1e-6));
   return { dir, color: col, peak: max };
 }
 

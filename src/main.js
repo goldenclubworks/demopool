@@ -16,6 +16,7 @@ import { initUI } from './ui.js';
 import { track, setSink } from './track.js';
 import { formHtml, readForm, scoreOf, inboxHtml, send as sendLead } from './lead.js';
 
+const T0 = performance.now(), dbg = new URLSearchParams(location.search).has('debug'), tick = (l) => { if (dbg) console.info('[perf]', l, Math.round(performance.now() - T0), 'ms'); };
 const $ = (s) => document.querySelector(s);
 const canvas = $('#c');
 const params = new URLSearchParams(location.search);
@@ -91,12 +92,13 @@ const saveHash = () => { clearTimeout(hashT); hashT = setTimeout(writeHash, 250)
 const writeHash = () => { try { history.replaceState(null, '', '#cfg=' + btoa(unescape(encodeURIComponent(JSON.stringify(state)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')); } catch { /* egal */ } };
 
 /* ---------- Renderer / Szene ---------- */
-let quality0 = ['high', 'medium', 'low'].includes(params.get('q')) ? params.get('q') : (isMobile ? 'medium' : 'high');
+let quality0 = ['high', 'medium', 'low'].includes(params.get('q')) ? params.get('q') : 'medium';         // medium (AO in halber Auflösung, SMAA) ist auf allen Geräten flüssig; high nur per ?q=high
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, powerPreference: 'high-performance' }); }
 catch (e) { $('#loading').innerHTML = 'Die 3D-Ansicht wird von diesem Gerät oder Browser nicht unterstützt.<br>Bitte einen aktuellen Browser (Safari, Chrome, Firefox, Edge) verwenden.'; throw e; }
 canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); toast('Die Grafik wurde unterbrochen – Seite wird neu geladen …'); setTimeout(() => location.reload(), 1200); });
-let dpr = Math.min(devicePixelRatio, isMobile ? 1.5 : 2);
+let dpr = Math.min(devicePixelRatio, isMobile ? 1.5 : 2, Math.sqrt((isMobile ? 2.2e6 : 4.2e6) / (innerWidth * innerHeight)));   // Pixel-Obergrenze: 5K-Displays und große Tablets nicht überfordern
+dpr = Math.max(1, dpr);
 renderer.setPixelRatio(dpr);
 renderer.toneMapping = THREE.NoToneMapping;                         // Tone-Mapping läuft in der Nachbearbeitung (post.js)
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false;
@@ -150,7 +152,9 @@ async function setTime(key) {
 
 /* ---------- Materialien ---------- */
 const aniso = Math.min(isMobile ? 4 : 16, renderer.capabilities.getMaxAnisotropy());
+tick('renderer+post');
 const { mats, U, copingMats, deckMats, ground: groundMat, ensure, prefetch } = createMaterials({ aniso, isMobile });
+tick('materials+texturen');
 const loaded = new Promise((res) => setTimeout(() => whenLoaded().then(res), 0));      // alle bis hierher angeforderten Dateien
 setModelGate(loaded);
 function applyLiner() {
@@ -166,7 +170,7 @@ const ground = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); ground.nam
 const patch = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); patch.name = 'rasen-vorher'; patch.visible = false; patch.receiveShadow = true; patch.renderOrder = -1; stage.add(patch);
 
 /* ---------- Pool, Zubehör, Garten ---------- */
-let pool = null, extras = null, garden = null, gardenKey = '', before = false;
+let pool = null, extras = null, garden = null, before = false;
 const lampLights = [];
 for (let i = 0; i < (isMobile ? 2 : 4); i++) { const l = new THREE.PointLight(0x9fe3ff, 0, 9, 1.4); l.visible = false; stage.add(l); lampLights.push(l); }
 let lampLevel = 0;
@@ -197,8 +201,11 @@ function rebuild() {
   ground.geometry.dispose(); ground.geometry = groundGeometry(pool.contour, 170, 1);
   if (typeof photo !== 'undefined' && photo.on) { occluder.geometry = shadowCatcher.geometry = ground.geometry; }
   patch.geometry.dispose(); patch.geometry = patchGeometry(pool.contour);
-  const gk = ['minX', 'maxX', 'minZ', 'maxZ'].map((k) => pool.bounds[k].toFixed(2)).join();
-  if (!garden || gk !== gardenKey) { if (garden) { stage.remove(garden.group); garden.dispose(); } garden = buildGarden(pool.bounds, { isMobile }); stage.add(garden.group); gardenKey = gk; }
+  if (!garden) {                                                  // Hecke, Bäume, Beete: einmal für die größte Terrasse gebaut – Modellwechsel baut sie nicht neu
+    const free = state.model === 'frei' || params.has('frei'), L = Math.max(free ? 16 : 0, state.length, ...MODELS.map((m) => m.length)), W = Math.max(free ? 6.5 : 0, state.width, ...MODELS.map((m) => m.width));
+    garden = buildGarden({ minX: -L / 2, maxX: L / 2, minZ: -W / 2, maxZ: W / 2 }, { isMobile }); stage.add(garden.group);
+  }
+  garden.fit(pool.bounds);
   garden.group.visible = state.garden;
   buildExtrasNow(); buildDims();
   const lamps = pool.group.userData.lamps || [];
@@ -580,7 +587,8 @@ controls.addEventListener('change', wake); canvas.addEventListener('pointerdown'
 renderer.setAnimationLoop(() => {
   if (!pool) return;
   timer.update(); const dt = Math.min(timer.getDelta(), 0.1); clock += dt;
-  if (isMobile && !tween && !intro && !controls.autoRotate && performance.now() - lastActive > 900 && (frameNo++ & 1)) return;
+  // Leerlauf (keine Eingabe, keine Fahrt): nur jedes zweite Bild – spart Akku und Wärme, Wasser läuft mit 30 fps weiter ruhig
+  if (!tween && !intro && !controls.autoRotate && !photo.on && performance.now() - lastActive > 1500 && (frameNo++ & 1)) return;
   if (tween && (started || !intro)) tweenStep(dt);
   if (!photo.on) controls.update();
   if (Math.abs(vo.x - vo.tx) > 0.3 || Math.abs(vo.y - vo.ty) > 0.3) { const f = Math.min(1, dt * 9); vo.x += (vo.tx - vo.x) * f; vo.y += (vo.ty - vo.y) * f; applyVO(); wake(); }
@@ -590,12 +598,12 @@ renderer.setAnimationLoop(() => {
     if (w) w.position.y = -(pool.dims.depth - 0.1) * (1 - e);
     if (k >= 1) { if (w) w.position.y = 0; intro = null; toast(isMobile ? 'Ziehen zum Drehen · zwei Finger zum Zoomen' : 'Ziehen zum Drehen · Scrollen zum Zoomen'); }
   }
-  U.uTime.value = clock; if (garden && state.garden) garden.update(clock);
+  U.uTime.value = clock;
   if (extras) extras.update(clock);
   if (lampLevel > 0 && state.extras.light === 'wechsel') applyLightColor(clock);
   if (shadowDirty) { renderer.shadowMap.needsUpdate = true; shadowDirty = false; }
   post.render(dt);
-  if (!started && assetsDone) { started = true; $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); setTimeout(() => { prefetch(); loadHDRI('evening'); loadHDRI('night'); }, 1500); }       // übrige Tageszeiten leise nachladen
+  if (!started && assetsDone) { started = true; tick('erstes Bild nach Preloader'); $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); setTimeout(() => { prefetch(); loadHDRI('evening'); loadHDRI('night'); }, 1500); }       // übrige Tageszeiten leise nachladen
   if (ar.building || params.has('fixed')) return;
   if (warm > 0) { warm--; return; }
   acc += dt; nF++;                                                // adaptive Auflösung: bei dauerhaft < ~30 fps schrittweise runter
@@ -603,12 +611,13 @@ renderer.setAnimationLoop(() => {
 });
 
 /* ---------- Start ---------- */
+tick('vor ui');
 ui = initUI(api);
 track('start', { w: innerWidth, mobile: isMobile });
-rebuild();
-await setTime(state.time);
+rebuild(); tick('pool+garten+zubehoer');
+await setTime(state.time); tick('himmel');
 if (isSheet()) { $('#cfg').classList.add('collapsed'); $('#b-panel').textContent = 'Konfigurieren ▴'; $('#b-panel').setAttribute('aria-expanded', 'false'); }
 layout();
 camera.position.set(9, 6, 11); controls.target.set(0, -0.2, 0); views.orbit(1);
 if (intro) { camera.position.set(-14, 12, 26); controls.target.set(0, -0.2, 0); views.orbit(3600); }
-if (params.has('debug')) window.__app = { THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api, mats };
+if (params.has('debug')) window.__app = { THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api, mats, post, stage };

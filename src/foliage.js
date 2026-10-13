@@ -4,18 +4,12 @@ import { leafCard, rng } from './textures.js';
 
 const Z = new THREE.Vector3(0, 0, 1);
 
-/** Material für Blatt-Karten: Alpha-Test mit Alpha-to-Coverage, Normalen aus Instanz-Richtung `aDir`, leichter Wind. */
-export function leafMaterial(map, { wind = 1 } = {}) {
-  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.95, metalness: 0, color: 0xd9e6d0 });
-  m.userData.wind = { value: wind }; m.userData.time = { value: 0 };
+/** Material für Blatt-Karten: Alpha-Test mit harten Kanten (SMAA glättet), Normalen aus Instanz-Richtung `aDir` (weiche, volle Kronen). Bewusst ohne Wind: ruhiges Bild, weniger Last. */
+export function leafMaterial(map) {
+  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.95, metalness: 0, color: 0xd9e6d0 });
   m.onBeforeCompile = (sh) => {
-    sh.uniforms.uWind = m.userData.wind; sh.uniforms.uTime = m.userData.time;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aDir; uniform float uWind, uTime;')
-      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal = normalize(transpose(mat3(instanceMatrix)) * aDir);')
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vec3 ip = instanceMatrix[3].xyz;
-        float ph = uTime * 1.6 + ip.x * 0.7 + ip.z * 0.5;
-        transformed.x += sin(ph) * 0.35 * uWind; transformed.y += cos(ph * 1.3) * 0.2 * uWind;`);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aDir;')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal = normalize(transpose(mat3(instanceMatrix)) * aDir);');
     // beide Kartenseiten gleich beleuchten
     sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('float faceDirection = gl_FrontFacing ? 1.0 : - 1.0;', 'float faceDirection = 1.0;'));
   };
@@ -41,7 +35,7 @@ export function leafCloud(count, place, mat, { seed = 1, tint = [0.78, 1.18], ca
   }
   geo.setAttribute('aDir', new THREE.InstancedBufferAttribute(dirs, 3));
   mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true;
-  mesh.castShadow = cast; mesh.receiveShadow = receive; mesh.frustumCulled = false;
+  mesh.castShadow = cast; mesh.receiveShadow = receive; mesh.computeBoundingSphere();      // Sichtbarkeitsprüfung: Hecken und Kronen hinter der Kamera kosten nichts
   return mesh;
 }
 

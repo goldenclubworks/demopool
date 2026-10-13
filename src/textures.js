@@ -64,6 +64,8 @@ export function tileMaps(size = 1024, aniso = 8) {
   const noise = [1, 2, 3].map((i) => makeNoise(200 + i, 4 * 2 ** (i - 1)));
   const cell = [];
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) cell.push({ l: 0.9 + r() * 0.1, hue: (r() - 0.5) * 0.05, tx: (r() - 0.5) * 0.16, ty: (r() - 0.5) * 0.16, glaze: 0.85 + r() * 0.3 });
+  const hs = size >> 1, NZ = new Float32Array(hs * hs);                         // Rauschen ist niederfrequent: halbe Auflösung genügt
+  for (let y = 0; y < hs; y++) for (let x = 0; x < hs; x++) NZ[y * hs + x] = fbm(noise, (x * 2) / size, (y * 2) / size, 8, 3);
   const H = new Float32Array(size * size), col = new Uint8ClampedArray(size * size * 4), rgh = new Uint8ClampedArray(size * size * 4);
   const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
@@ -74,7 +76,7 @@ export function tileMaps(size = 1024, aniso = 8) {
     const bevel = smooth(gap * 0.5, gap * 0.5 + t * 0.13, d);                 // Fase zum Rand hin
     const u = lx / t - 0.5, v = ly / t - 0.5;
     const pillow = (1 - (u * u + v * v) * 1.6) * 0.35;                        // leichte Wölbung
-    const n = fbm(noise, x / size, y / size, 8, 3);
+    const n = NZ[(y >> 1) * hs + (x >> 1)];
     const i = (y * size + x) * 4;
     H[y * size + x] = inTile * (0.55 + 0.4 * bevel + pillow * 0.5 + c.tx * u + c.ty * v) - (1 - inTile) * 0.25;
     // Farbe: Fliese hell mit leichter Glasur-Schattierung, Fuge dunkler (Zement) mit Schmutzkante

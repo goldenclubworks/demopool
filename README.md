@@ -76,7 +76,13 @@ Breit (Desktop, Tablet quer): Bedienfeld links, Szene wird in den freien Bereich
 Foto-HDRI als Himmel und Beleuchtung (Tag, Abend, Nacht; Sonne wird aus dem Bild gelesen), PBR-Materialien (Mosaikfliesen mit Fugen und Glasur, Natursteinplatten einzeln mit Fugen, Holzdielen, Rasen), Wasser mit Fresnel-Spiegelung, Wellen, Lichtmuster und Tiefenfärbung, Ambient Occlusion (N8AO), Bloom, Vignette. Hecken und Bäume bestehen aus tausenden instanziierten Blatt-Karten.
 
 ## Performance
-HDRI-Kulisse, adaptive Qualität (high → medium → low, dann Auflösung und Sparmodus), auf Handys kleinere Schattenkarte, 2 statt 4 Poolleuchten, Auflösung max. 1,5×, im Leerlauf nur jedes zweite Bild, adaptive Auflösung und Sparmodus bei dauerhaft niedriger Bildrate, Garten wird nur bei geänderter Beckengröße neu gebaut.
+Getestet in Chrome, Firefox und der Safari-Engine (WebKit) am Desktop sowie iPhone-, iPad- und Pixel-Größen: durchgehend 60 fps, schlechtester Einzelframe unter 25 ms, Start 1–3 s (aus dem Cache).
+- **Qualitätsstufen:** Standard ist `medium` (Umgebungsverdunklung in halber Auflösung, SMAA); `high` (4× MSAA, volle AO) nur per `?q=high`; `low` ohne AO/Bloom. Bei dauerhaft niedriger Bildrate schaltet die Qualität automatisch herunter, dann Auflösung, dann Sparmodus.
+- **Kein Wind/keine ständige Vertex-Animation** bei Laub: ruhigeres Bild, weniger Last.
+- Hecke, Bäume und Beete werden **einmal** gebaut (für die größte Terrasse); beim Modellwechsel passen sich nur Sichtschutz und Leuchten an (Umbau ca. 150 ms statt 290 ms).
+- Sichtbarkeitsprüfung für alle Laub-Instanzen, Pixel-Obergrenze (5K-Displays und große Tablets werden nicht überfordert), im Leerlauf nur jedes zweite Bild (30 fps, Akku und Wärme).
+- Schnellerer Start: Fliesen-Rauschen in halber Auflösung, Sonnensuche im HDRI in Schritten, Preloader mit kleinen Dateien (siehe unten), Steinoptionen und Pflanzen laden nach dem Start.
+- Schatten nur bei Änderung, adaptive Auflösung, im Debug-Modus (`?debug`) Zeitmessung der Startphasen in der Konsole.
 
 ## Hinweise
 - In AR liegt der Pool flach auf dem Boden (Wasser, Rand, Terrasse, Liegen, Schirm, Kübel, Abdeckung), weil ein echtes Gelände nicht ausgehoben werden kann.
