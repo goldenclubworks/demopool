@@ -45,6 +45,12 @@ Debug: `?debug` (setzt `window.__app`), `?fixed` schaltet die adaptive Auflösun
 ## Dateien
 `src/main.js` (Szene, Zustand, AR) · `src/ui.js` (Ablauf, Preisleiste) · `src/catalog.js` (Modelle/Preise) · `src/pool.js` (Becken) · `src/extras.js` (Zubehör) · `src/garden.js` (Umgebung: Hecke, Sichtschutz, Bäume; kein Gebäude, Kamera bleibt im Grundstück) · `src/textures.js` (prozedurale Texturen)
 
+## Bedienung (Maus und Touch)
+Ziehen = drehen · Scrollen / zwei Finger = zoomen · Doppeltippen/Doppelklick = Standardansicht. Verschieben (Pan) ist bewusst aus, damit man sich nicht verirrt. Kamerafahrten laufen als Bogen um den Pool; wer währenddessen zieht, übernimmt sofort.
+
+## Performance
+Himmel als vorgebackene Cube-Map, auf Handys kleinere Schattenkarte, 2 statt 4 Poolleuchten, Auflösung max. 1,5×, im Leerlauf nur jedes zweite Bild, adaptive Auflösung und Sparmodus bei dauerhaft niedriger Bildrate, Garten wird nur bei geänderter Beckengröße neu gebaut.
+
 ## Hinweise
 - In AR liegt der Pool flach auf dem Boden (Wasser, Rand, Terrasse, Liegen, Schirm, Kübel, Abdeckung), weil ein echtes Gelände nicht ausgehoben werden kann.
 - Preise sind Platzhalter. Vor dem Verkauf: Impressum/Datenschutz, Lizenzvertrag/AGB und Haftungsausschluss rechtlich prüfen lassen. Drittlizenzen: `LICENSE-THIRD-PARTY.md`.

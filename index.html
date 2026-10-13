@@ -16,8 +16,9 @@
     @media (prefers-color-scheme: dark) {
       :root { --bg: #0f171c; --panel: rgba(21,30,36,.93); --ink: #e6eef3; --muted: #9db0bd; --line: rgba(230,238,243,.15); --accent: #3fa7e0; --accent-ink: #04141f; --soft: rgba(63,167,224,.14); }
     }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); overflow: hidden; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); overflow: hidden; overscroll-behavior: none; touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+    button, .btn, .panel { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
     canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
     [hidden] { display: none !important; }
     .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 10px 34px rgba(0,0,0,.16); }

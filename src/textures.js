@@ -73,7 +73,8 @@ export function grassTextures(size = 2048) {
     ctx.quadraticCurveTo(x + Math.cos(ang) * len * 0.5 + (r() - 0.5) * 4, y + Math.sin(ang) * len * 0.5, x + Math.cos(ang) * len, y + Math.sin(ang) * len);
     ctx.stroke();
   };
-  for (let i = 0; i < 90000; i++) {
+  const blades = Math.round(size * size * 0.03);                       // Dichte bleibt gleich, Aufwand sinkt mit der Auflösung
+  for (let i = 0; i < blades; i++) {
     const x = r() * size, y = r() * size;
     blade(x, y);
     if (x < 24) blade(x + size, y);
