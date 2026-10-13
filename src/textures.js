@@ -223,3 +223,28 @@ export function slatTexture(size = 256) {
   for (let k = 0; k < 16; k++) { x.fillStyle = 'rgba(40,50,60,.5)'; x.fillRect(0, k * n, size, 2); x.fillStyle = 'rgba(255,255,255,.35)'; x.fillRect(0, k * n + 2, size, 2); }
   return finish(new THREE.CanvasTexture(c), { repeat: [1, 1] });
 }
+
+/** Laub (Hecke/Bäume), kachelbar */
+export function leafTexture(size = 512) {
+  const c = canvas(size, size), x = c.getContext('2d'), r = rng(77);
+  x.fillStyle = '#2f5a2a'; x.fillRect(0, 0, size, size);
+  for (let i = 0; i < 9000; i++) {
+    const px = r() * size, py = r() * size, h = 85 + r() * 40, l = 14 + r() * 28;
+    x.fillStyle = `hsla(${h},${40 + r() * 30}%,${l}%,${0.55 + r() * 0.4})`;
+    x.beginPath(); x.ellipse(px, py, 2 + r() * 5, 1.2 + r() * 3, r() * 3, 0, Math.PI * 2); x.fill();
+  }
+  return finish(new THREE.CanvasTexture(c), { repeat: [1, 1] });
+}
+
+/** Strömungsstreifen als Alpha-Textur (Gegenstrom, Wasserfall); Streifen laufen entlang U */
+export function flowTexture(size = 256) {
+  const c = canvas(size, size), x = c.getContext('2d'), r = rng(91);
+  x.fillStyle = '#000'; x.fillRect(0, 0, size, size);
+  for (let i = 0; i < 60; i++) {
+    const y = r() * size, len = size * (0.25 + r() * 0.6), x0 = r() * size, a = 0.35 + r() * 0.65;
+    const g = x.createLinearGradient(x0, 0, x0 + len, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, `rgba(255,255,255,${a})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(x0, y, len, 1.5 + r() * 3);
+    if (x0 + len > size) { x.fillRect(x0 - size, y, len, 1.5); }
+  }
+  return finish(new THREE.CanvasTexture(c), { srgb: false, repeat: [1, 1] });
+}

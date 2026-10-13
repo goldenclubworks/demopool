@@ -11,9 +11,9 @@ export const SHAPES = {
 };
 export const STEPS = { none: 'Ohne', corner: 'Ecktreppe', roman: 'Römertreppe', full: 'Breittreppe' };
 
-const WATER_Y = -0.12;      // Wasserspiegel unter Beckenrand-Oberkante
-const COPING_W = 0.32;      // Breite Beckenrand
-const DECK_W = 2.2;         // Breite Terrasse außerhalb des Beckenrands
+export const WATER_Y = -0.12;      // Wasserspiegel unter Beckenrand-Oberkante
+export const COPING_W = 0.32;      // Breite Beckenrand
+export const DECK_W = 2.2;         // Breite Terrasse außerhalb des Beckenrands
 
 /* ---------- 2D-Konturen in der (x, z)-Ebene, gegen den Uhrzeigersinn ---------- */
 function arc(cx, cz, rx, rz, a0, a1, n, out) {
@@ -80,7 +80,7 @@ function offsetPoly(p, o) {
   return out;
 }
 /** [zmin, zmax] der Kontur bei x (Konturen sind je x ein einzelnes Intervall) */
-function spanAt(p, x) {
+export function spanAt(p, x) {
   let lo = Infinity, hi = -Infinity;
   for (let i = 0; i < p.length; i++) {
     const a = p[i], b = p[(i + 1) % p.length];
@@ -98,6 +98,14 @@ export function groundGeometry(contour, size = 1800, uvScale = 5) {
   const g = flatGeo(new THREE.ShapeGeometry(s));
   const uv = g.attributes.uv, pos = g.attributes.position;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / uvScale, -pos.getZ(i) / uvScale);
+  return g;
+}
+
+/** Flächenstück über der Beckenöffnung (für „Vorher“-Ansicht) */
+export function patchGeometry(contour) {
+  const g = flatGeo(new THREE.ShapeGeometry(toShape(contour)));
+  const uv = g.attributes.uv, pos = g.attributes.position;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / 5, -pos.getZ(i) / 5);
   return g;
 }
 
@@ -227,24 +235,6 @@ export function buildPool(opts, mats, mode = 'scene') {
   if (opts.deck !== 'gras') {
     const dw = DECK_W, ob = roundedRect((maxX - minX) / 2 + COPING_W + dw, (maxZ - minZ) / 2 + COPING_W + dw, 0.6);
     add(ring(ob, copeOut, -0.02, 0.055), mats.deck, 'terrasse');
-  }
-
-  /* ---- Liegen ---- */
-  if (L >= 5 && !(ar && false)) {
-    const lg = new THREE.Group(); lg.name = 'liegen'; group.add(lg);
-    const top = opts.deck === 'gras' ? 0 : 0.035;
-    for (const [fx, side] of [[0.3, 1], [0.44, 1], [0.7, 1]]) {
-      const x = minX + (maxX - minX) * fx, sp = spanAt(contour, x); if (!sp) continue;
-      const z = sp[1] + COPING_W + 0.25 + 0.95, one = new THREE.Group();
-      const frame = new THREE.BoxGeometry(0.62, 0.05, 1.9); frame.translate(0, 0.33, 0);
-      const mat = new THREE.BoxGeometry(0.58, 0.07, 1.2); mat.translate(0, 0.38, 0.32);
-      const back = new THREE.BoxGeometry(0.58, 0.07, 0.72); back.translate(0, 0.0, 0.0); back.rotateX(0.95); back.translate(0, 0.62, -0.62);
-      const legs = new THREE.BoxGeometry(0.62, 0.3, 0.05); legs.translate(0, 0.17, 0.85);
-      const legs2 = legs.clone().translate(0, 0, -1.7);
-      for (const [g, m] of [[frame, mats.loungerFrame], [mat, mats.loungerCushion], [back, mats.loungerCushion], [legs, mats.loungerFrame], [legs2, mats.loungerFrame]]) add(g, m, 'liege', { cast: true, parent: one });
-      one.position.set(x, top, z); one.rotation.y = side > 0 ? 0 : Math.PI; lg.add(one);
-      if (fx === 0.44) one.visible = false;     // nur zwei Liegen sichtbar (Platz für Sonnenschirm später)
-    }
   }
 
   /* ---- Abdeckungen (umschaltbar) ---- */

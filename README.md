@@ -1,13 +1,14 @@
 # Pool-Planer 3D (Mustervorlage)
 
-3D-Konfigurator für Schwimmbecken (three.js + Vite). Neutral, ohne Hersteller-Branding, pro Kunde per Link personalisierbar.
+3D-Konfigurator für Schwimmbecken (three.js + Vite). Geführter Ablauf in 5 Schritten, Beispielpreise, Zubehör, Garten-Umgebung, AR. Neutral, ohne Hersteller-Branding, pro Kunde per Link personalisierbar.
 
-- Formen: Rechteck, Rundecken, Oval, Römisch, Niere · Länge 3–16 m, Breite 2–6,5 m, Tiefe 1–2,4 m (ab 1,5 m mit Gefälle)
-- Treppe (Ecke/Römer/Breit), Beckenrand (Naturstein/Granit/Beton), Terrasse (Holz/Stein/Beton/Rasen), 5 Beckenfarben
-- Abdeckung: offen, Rollladen, Überdachung · Tageszeit: Tag, Abend, Nacht (Poolbeleuchtung)
-- Maße, Wasserfläche und Wasserinhalt live
-- „Im Garten ansehen (AR)“: Pool 1:1 auf dem Rasen (iOS Quick Look, Android Scene Viewer/WebXR, nur über https). Am Desktop per QR-Code.
-- „Anfrage senden“: E-Mail mit Konfiguration und Link. Die Konfiguration steckt im Link (`#cfg=…`) und kann geteilt werden.
+1. **Modell** (6 GFK-Modelle als Karten) + Treppe
+2. **Farbe** (5 Beckenfarben), Beckenrand, Abdeckung (offen / Rollladen / Überdachung)
+3. **Terrasse** (Holz, Stein, Beton, Rasen), Garten ein/aus, Tageszeit (Tag, Abend, Nacht)
+4. **Extras**: Sonnenschirm, Leiter, Gegenstromanlage, Wasserfall, Wärmepumpe, Pflanzkübel, Liegen, Beleuchtungsfarbe
+5. **Fertig**: Bild, Zusammenfassung, Preisaufschlüsselung, Anfrage per E-Mail, Bild speichern, Link kopieren, AR
+
+Dazu: Einstiegsfahrt (Kamera fährt heran, Wasser läuft ein), Ansichten (Außen, Von oben, Nah, Rundflug, Vorher ohne Pool), Maßanzeige am Pool, Live-Preis, Kaustik-Licht im Becken, Poolbeleuchtung bei Nacht, AR 1:1 (iOS Quick Look, Android Scene Viewer/WebXR, nur über https; am Desktop per QR-Code).
 
 ```bash
 npm install
@@ -18,7 +19,14 @@ npm run preview
 
 Hosting: Vercel (Framework „Vite“, Build `npm run build`, Output `dist`) oder jeder statische Webspace mit https.
 
-## Personalisierung per URL
+## Für eine Poolfirma anpassen: `src/catalog.js`
+Dort stehen **alle Modelle, Optionen und Preise** (Beispielwerte):
+- `MODELS`: Name, Form (`rect`, `round`, `oval`, `roman`, `kidney`), Länge, Breite, Tiefe, Treppe, Preis
+- `LINERS`, `COPING`, `DECK`, `COVER`, `LIGHTS`, `EXTRAS`: Namen und Preise
+- `SETUP`: Preis für Aushub/Einbau und Technik
+Firmenname, Farbe, Logo und Anfrage-Adresse kommen per Link (siehe unten). Weitere Beckenformen/Geometrie: `src/pool.js`.
+
+## Personalisierung und Schalter per URL
 
 | Parameter | Wirkung | Beispiel |
 |---|---|---|
@@ -26,12 +34,18 @@ Hosting: Vercel (Framework „Vite“, Build `npm run build`, Output `dist`) ode
 | `farbe` | Akzentfarbe (Hex) | `&farbe=%230a6ebd` |
 | `logo` | Logo (nur https-Bild) | `&logo=https://…/logo.png` |
 | `mail` | Empfänger der Anfrage | `&mail=anfrage@schmidt-pool.de` |
+| `preise=0` | Preise ausblenden | `&preise=0` |
+| `frei=1` | zusätzlich freie Maße per Schieberegler | `&frei=1` |
+| `nointro` | Einstiegsfahrt überspringen | `&nointro` |
+| `lite` | Sparmodus erzwingen (kein Wolken-Himmel, keine Schatten) | `&lite` |
 
 Komplett: `https://DEINE-DOMAIN/?firma=Schmidt-Pool&farbe=%230a6ebd&mail=anfrage@schmidt-pool.de`
+Debug: `?debug` (setzt `window.__app`), `?fixed` schaltet die adaptive Auflösung ab. Die Konfiguration steckt im Link (`#cfg=…`) und kann geteilt werden.
 
-Debug: `?debug` (setzt `window.__app`), `?fixed` schaltet die adaptive Auflösung ab.
+## Dateien
+`src/main.js` (Szene, Zustand, AR) · `src/ui.js` (Ablauf, Preisleiste) · `src/catalog.js` (Modelle/Preise) · `src/pool.js` (Becken) · `src/extras.js` (Zubehör) · `src/garden.js` (Umgebung: Hecke, Sichtschutz, Bäume; kein Gebäude, Kamera bleibt im Grundstück) · `src/textures.js` (prozedurale Texturen)
 
 ## Hinweise
-- In AR wird der Pool flach auf dem Boden gezeigt (Wasser, Rand, Terrasse, Liegen, Abdeckung), weil ein echtes Gelände nicht ausgehoben werden kann.
-- Vor dem Verkauf: Impressum/Datenschutz, Lizenzvertrag/AGB und Haftungsausschluss (Visualisierung, Maße unverbindlich) ergänzen und rechtlich prüfen lassen. Drittlizenzen: `LICENSE-THIRD-PARTY.md`.
+- In AR liegt der Pool flach auf dem Boden (Wasser, Rand, Terrasse, Liegen, Schirm, Kübel, Abdeckung), weil ein echtes Gelände nicht ausgehoben werden kann.
+- Preise sind Platzhalter. Vor dem Verkauf: Impressum/Datenschutz, Lizenzvertrag/AGB und Haftungsausschluss rechtlich prüfen lassen. Drittlizenzen: `LICENSE-THIRD-PARTY.md`.
 - Nicht auf echten Geräten getestet: AR (iPhone/Android) – bitte nach dem Hosting prüfen.
