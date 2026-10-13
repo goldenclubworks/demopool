@@ -12,6 +12,7 @@ Dazu: Einstiegsfahrt (Kamera fährt heran, Wasser läuft ein), Ansichten (Außen
 
 ```bash
 npm install
+npm run assets   # lädt die CC0-Texturen/HDRIs/Modelle nach public/ (bereits eingecheckt, nur zum Erneuern)
 npm run dev      # Entwicklung (Port 5173)
 npm run build    # Produktion -> dist/
 npm run preview
@@ -40,10 +41,12 @@ Firmenname, Farbe, Logo und Anfrage-Adresse kommen per Link (siehe unten). Weite
 | `lite` | Sparmodus erzwingen (kein Wolken-Himmel, keine Schatten) | `&lite` |
 
 Komplett: `https://DEINE-DOMAIN/?firma=Schmidt-Pool&farbe=%230a6ebd&mail=anfrage@schmidt-pool.de`
+| `q` | Grafikqualität erzwingen: `high` (AO, 4× MSAA), `medium` (AO halbe Auflösung), `low` (kein AO/Bloom) | `&q=medium` |
+
 Debug: `?debug` (setzt `window.__app`), `?fixed` schaltet die adaptive Auflösung ab. Die Konfiguration steckt im Link (`#cfg=…`) und kann geteilt werden.
 
 ## Dateien
-`src/main.js` (Szene, Zustand, AR) · `src/ui.js` (Ablauf, Preisleiste) · `src/catalog.js` (Modelle/Preise) · `src/pool.js` (Becken) · `src/extras.js` (Zubehör) · `src/garden.js` (Umgebung: Hecke, Sichtschutz, Bäume; kein Gebäude, Kamera bleibt im Grundstück) · `src/textures.js` (prozedurale Texturen)
+`src/main.js` (Szene, Zustand, AR) · `src/ui.js` (Ablauf, Preisleiste) · `src/catalog.js` (Modelle/Preise) · `src/pool.js` (Becken) · `src/extras.js` (Zubehör) · `src/garden.js` (Umgebung: Hecke, Sichtschutz, Bäume; kein Gebäude, Kamera bleibt im Grundstück) · `src/materials.js` (Mosaik-Becken, Wasser, Stein, Holz, Rasen) · `src/assets.js` (CC0-Texturen, HDRI, glTF) · `src/post.js` (AO, Bloom, Tone-Mapping) · `src/foliage.js` (Hecken, Bäume aus Blatt-Karten) · `src/textures.js` (prozedurale Texturen: Fliesen, Wellen, Laub)
 
 ## Bedienung (Maus und Touch)
 Ziehen = drehen · Scrollen / zwei Finger = zoomen · Doppeltippen/Doppelklick = Standardansicht. Verschieben (Pan) ist bewusst aus, damit man sich nicht verirrt. Kamerafahrten laufen als Bogen um den Pool; wer währenddessen zieht, übernimmt sofort.
@@ -51,8 +54,11 @@ Ziehen = drehen · Scrollen / zwei Finger = zoomen · Doppeltippen/Doppelklick =
 ## Layout
 Breit (Desktop, Tablet quer): Bedienfeld links, Szene wird in den freien Bereich verschoben. Schmal oder hochkant (Handy, Tablet): kompaktes Sheet unten (max. 46 % der Höhe), Szene und Kamera rahmen nur den sichtbaren Bereich. Tippen auf die Szene klappt das Sheet ein; „Zusätzlich“ fährt die Kamera bei Gegenstromanlage und Überdachung auf die passende Seite.
 
+## Optik
+Foto-HDRI als Himmel und Beleuchtung (Tag, Abend, Nacht; Sonne wird aus dem Bild gelesen), PBR-Materialien (Mosaikfliesen mit Fugen und Glasur, Natursteinplatten einzeln mit Fugen, Holzdielen, Rasen), Wasser mit Fresnel-Spiegelung, Wellen, Lichtmuster und Tiefenfärbung, Ambient Occlusion (N8AO), Bloom, Vignette. Hecken und Bäume bestehen aus tausenden instanziierten Blatt-Karten.
+
 ## Performance
-Himmel als vorgebackene Cube-Map, auf Handys kleinere Schattenkarte, 2 statt 4 Poolleuchten, Auflösung max. 1,5×, im Leerlauf nur jedes zweite Bild, adaptive Auflösung und Sparmodus bei dauerhaft niedriger Bildrate, Garten wird nur bei geänderter Beckengröße neu gebaut.
+HDRI-Kulisse, adaptive Qualität (high → medium → low, dann Auflösung und Sparmodus), auf Handys kleinere Schattenkarte, 2 statt 4 Poolleuchten, Auflösung max. 1,5×, im Leerlauf nur jedes zweite Bild, adaptive Auflösung und Sparmodus bei dauerhaft niedriger Bildrate, Garten wird nur bei geänderter Beckengröße neu gebaut.
 
 ## Hinweise
 - In AR liegt der Pool flach auf dem Boden (Wasser, Rand, Terrasse, Liegen, Schirm, Kübel, Abdeckung), weil ein echtes Gelände nicht ausgehoben werden kann.

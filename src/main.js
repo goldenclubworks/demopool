@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import qrcode from 'qrcode-generator';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Sky } from 'three/addons/objects/Sky.js';
+import { GroundedSkybox } from 'three/addons/objects/GroundedSkybox.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { USDZExporter } from 'three/addons/exporters/USDZExporter.js';
-import { grassTextures, mosaicTexture, woodTexture, paverTexture, concreteTexture, waterNormal, slatTexture } from './textures.js';
+import { createMaterials } from './materials.js';
+import { createPost } from './post.js';
+import { loadHDRI } from './assets.js';
 import { buildPool, groundGeometry, patchGeometry } from './pool.js';
 import { buildExtras } from './extras.js';
 import { buildGarden } from './garden.js';
@@ -63,116 +65,76 @@ const saveHash = () => { clearTimeout(hashT); hashT = setTimeout(writeHash, 250)
 const writeHash = () => { try { history.replaceState(null, '', '#cfg=' + btoa(unescape(encodeURIComponent(JSON.stringify(state)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')); } catch { /* egal */ } };
 
 /* ---------- Renderer / Szene ---------- */
+let quality0 = ['high', 'medium', 'low'].includes(params.get('q')) ? params.get('q') : (isMobile ? 'medium' : 'high');
 let renderer;
-try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }); }
+try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, powerPreference: 'high-performance' }); }
 catch (e) { $('#loading').innerHTML = 'Die 3D-Ansicht wird von diesem Gerät oder Browser nicht unterstützt.<br>Bitte einen aktuellen Browser (Safari, Chrome, Firefox, Edge) verwenden.'; throw e; }
 canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); toast('Die Grafik wurde unterbrochen – Seite wird neu geladen …'); setTimeout(() => location.reload(), 1200); });
 let dpr = Math.min(devicePixelRatio, isMobile ? 1.5 : 2);
 renderer.setPixelRatio(dpr);
-renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMapping = THREE.NoToneMapping;                         // Tone-Mapping läuft in der Nachbearbeitung (post.js)
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.2, 2500);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.2, 700);
+const post = createPost(renderer, scene, camera, quality0);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.08; controls.minDistance = 2.5; controls.maxDistance = 42; controls.minPolarAngle = 0.1; controls.maxPolarAngle = 1.46; controls.enablePan = false;
 controls.rotateSpeed = isMobile ? 0.6 : 1; controls.zoomSpeed = isMobile ? 0.9 : 1; controls.dampingFactor = isMobile ? 0.12 : 0.08; controls.autoRotateSpeed = 1.1;
 controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };   // Pan ist aus: zwei Finger = Zoom
 let shadowDirty = true;
 
-/* Himmel, Sonne */
+/* Himmel (Foto-HDRI als Kulisse und Beleuchtung), Sonne */
 const pmrem = new THREE.PMREMGenerator(renderer);
-const mkSky = (scale) => {
-  const s = new Sky(); s.scale.setScalar(scale);
-  const u = s.material.uniforms; u.turbidity.value = 3.2; u.rayleigh.value = 1.6; u.mieCoefficient.value = 0.005; u.mieDirectionalG.value = 0.8; u.cloudCoverage.value = 0.45; u.cloudDensity.value = 0.5;
-  return s;
-};
-const envSky = mkSky(50), envScene = new THREE.Scene(); envScene.add(envSky);
-// Himmel einmal in eine Cube-Map gebacken (statt Wolken-Shader pro Frame): deutlich leichter auf Handys
-const cubeRT = new THREE.WebGLCubeRenderTarget(isMobile ? 512 : 1024, { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
-const cubeCam = new THREE.CubeCamera(0.1, 100, cubeRT);
 const sun = new THREE.DirectionalLight(0xffeedd, 3); sun.castShadow = true; scene.add(sun, sun.target);
-sun.shadow.intensity = 0.7; sun.shadow.mapSize.set(isMobile ? 1536 : 4096, isMobile ? 1536 : 4096); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
-const hemi = new THREE.HemisphereLight(0xd3e2f2, 0x4f5a42, 0.2); scene.add(hemi);
-scene.fog = new THREE.Fog(0xb9c7d2, 70, 520);
+sun.shadow.intensity = 0.9; sun.shadow.mapSize.set(isMobile ? 2048 : 4096, isMobile ? 2048 : 4096); sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
+// az: gewünschte Himmelsrichtung der Sonne (Grad, in der x-z-Ebene), damit Wasser und Becken von der Kamerarichtung aus schön beleuchtet sind
 const TIME = {
-  day: { elev: 38, az: 150, exp: 0.62, env: 0.6, hemi: 0.2, fog: 0xb9c7d2, lamp: 0, caus: 1 },
-  evening: { elev: 5, az: 120, exp: 0.7, env: 0.4, hemi: 0.14, fog: 0xc89d86, lamp: 0.55, caus: 0.45 },
-  night: { elev: -9, az: 120, exp: 1.5, env: 0.45, hemi: 0.2, fog: 0x0b1320, lamp: 1, caus: 0.25 },
+  day: { hdri: 'day', grass: 0.8, az: 205, exp: 0.95, env: 0.95, sun: 2.5, bg: 1, lamp: 0, caus: 1, light: 1 },
+  evening: { hdri: 'evening', grass: 0.8, az: 215, exp: 0.8, env: 0.85, sun: 2.2, bg: 1, lamp: 0.55, caus: 0.45, light: 0.45 },
+  night: { hdri: 'night', grass: 0.8, az: 150, exp: 1.15, env: 0.55, sun: 0.55, sunCol: 0x9db4ff, bg: 1, lamp: 1, caus: 0.25, light: 0.07 },
 };
-const causU = { uTime: { value: 0 }, uCaus: { value: 1 } };
-let envRT = null;
-function setTime(key) {
-  const t = TIME[key], e = Math.sin(THREE.MathUtils.degToRad(t.elev));
-  const dir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - t.elev), THREE.MathUtils.degToRad(t.az));
-  envSky.material.uniforms.sunPosition.value.copy(dir);
-  sun.position.copy(dir.clone().setY(Math.max(0.12, dir.y))).multiplyScalar(60);
-  if (t.elev > 0) { sun.intensity = 1.0 + 2.8 * e; sun.color.setHSL(0.085, 0.75, 0.66 + 0.2 * e); } else { sun.intensity = 0.7; sun.color.set(0x8fa6d8); }
-  renderer.toneMappingExposure = t.exp; scene.environmentIntensity = t.env; hemi.intensity = t.hemi; scene.fog.color.set(t.fog); causU.uCaus.value = t.caus;
-  if (envRT) envRT.dispose();
-  envRT = pmrem.fromScene(envScene, 0, 0.1, 100, { size: isMobile ? 256 : 512 });
-  scene.environment = envRT.texture;
-  cubeCam.update(renderer, envScene); scene.background = cubeRT.texture;
+let skybox = null, envToken = 0;
+const envRT = {};
+async function setTime(key) {
+  const t = TIME[key], token = ++envToken, h = await loadHDRI(t.hdri);
+  if (token !== envToken) return;
+  const rot = Math.atan2(h.sun.dir.z, h.sun.dir.x) - THREE.MathUtils.degToRad(t.az);          // Drehung der Kulisse um y, damit die Sonne bei az steht
+  const dir = h.sun.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+  sun.position.copy(dir).multiplyScalar(60);
+  sun.intensity = t.sun; sun.color.copy(t.sunCol ? tmpC.set(t.sunCol) : h.sun.color).lerp(new THREE.Color(1, 1, 1), t === TIME.day ? 0.25 : 0);
+  if (!envRT[key]) envRT[key] = pmrem.fromEquirectangular(h.texture);
+  scene.environment = envRT[key].texture; scene.environmentIntensity = t.env; scene.environmentRotation.set(0, rot, 0);
+  if (skybox) { scene.remove(skybox); skybox.geometry.dispose(); skybox.material.dispose(); }
+  skybox = new GroundedSkybox(h.texture, 3, 320);
+  skybox.material.onBeforeCompile = (sh) => {
+    // weich (Mip-Bias) und der Boden der Kulisse wird zur Rasenfarbe gezogen, damit der Übergang vom Rasen nahtlos ist
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vLY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLY = position.y;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLY;')
+      .replace('#include <map_fragment>', `vec4 sampledDiffuseColor = texture2D( map, vMapUv, 2.5 ); diffuseColor *= sampledDiffuseColor;
+      float gm = smoothstep(0.0, -1.5, vLY); float gl = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.42, 0.18) * gl * ${t.grass.toFixed(2)}, gm);`);
+  };
+  skybox.material.color.setScalar(t.bg); skybox.material.depthWrite = false; skybox.material.depthTest = false; skybox.renderOrder = -1000; skybox.frustumCulled = false; skybox.rotation.y = -rot; skybox.position.y = 3; scene.add(skybox);
+  post.setExposure(t.exp); U.uCaus.value = t.caus; U.uLight.value = t.light; U.uSunCol.value.copy(sun.color);
   setLamps(t.lamp);
   shadowDirty = true;
+  if (window.__app) window.__app.sunDir = dir;
 }
 
-/* ---------- Texturen & Materialien ---------- */
+/* ---------- Materialien ---------- */
 const aniso = Math.min(isMobile ? 4 : 16, renderer.capabilities.getMaxAnisotropy());
-const T = {
-  mosaic: mosaicTexture(), wood: woodTexture(isMobile ? 512 : 1024), paverLight: paverTexture(isMobile ? 512 : 1024, [214, 208, 196], 41), paverDark: paverTexture(isMobile ? 512 : 1024, [112, 116, 122], 53),
-  concrete: concreteTexture(), water: waterNormal(isMobile ? 256 : 512), slat: slatTexture(),
-};
-for (const t of [T.mosaic, T.wood, T.paverLight, T.paverDark, T.concrete, T.slat]) t.anisotropy = aniso;
-const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0, ...o });
-const mats = {
-  liner: std({ map: T.mosaic, color: LINERS[state.liner].hex, roughness: 0.28, vertexColors: true, side: THREE.DoubleSide }),
-  water: new THREE.MeshPhysicalMaterial({ color: LINERS[state.liner].hex, transparent: true, opacity: 0.52, roughness: 0.04, metalness: 0, ior: 1.33, normalMap: T.water, normalScale: new THREE.Vector2(0.22, 0.22), envMapIntensity: 1.3, depthWrite: false }),
-  waterAR: std({ color: LINERS[state.liner].hex, roughness: 0.18 }),
-  lamp: std({ color: 0xffffff, emissive: 0xcdeeff, emissiveIntensity: 0, roughness: 0.4 }),
-  slats: std({ map: T.slat, color: 0xcfd6da, roughness: 0.5, side: THREE.DoubleSide }),
-  rollBox: std({ color: 0xaab2b7, roughness: 0.5, metalness: 0.3 }),
-  glass: new THREE.MeshPhysicalMaterial({ color: 0xe2f4f8, transparent: true, opacity: 0.2, roughness: 0.05, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.5 }),
-  alu: std({ color: 0xc2c8cc, roughness: 0.35, metalness: 0.85 }),
-  loungerFrame: std({ color: 0xf0f0ee, roughness: 0.5 }), loungerCushion: std({ color: 0x8a949b, roughness: 0.95 }),
-};
-// Lichtmuster (Kaustik) am Beckenboden/-wand: nur unter der Wasserlinie, animiert
-mats.liner.onBeforeCompile = (sh) => {
-  Object.assign(sh.uniforms, causU);
-  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;');
-  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-    varying vec3 vWPos; uniform float uTime; uniform float uCaus;
-    float caustic(vec2 p, float t){
-      vec2 q = p * 1.7; float c = 0.0;
-      for (int i = 0; i < 3; i++) {
-        q += vec2(sin(q.y * 1.3 + t * 0.7 + float(i) * 2.0), sin(q.x * 1.1 - t * 0.6 + float(i) * 1.3)) * 0.55;
-        c += 1.0 - abs(sin(q.x * 1.9 + q.y * 0.7));
-      }
-      return pow(clamp(c / 3.0, 0.0, 1.0), 7.0);
-    }`).replace('#include <map_fragment>', `#include <map_fragment>
-    float under = smoothstep(-0.1, -0.35, vWPos.y);
-    diffuseColor.rgb += vec3(0.95, 1.0, 1.0) * caustic(vWPos.xz + vWPos.y * 0.3, uTime) * uCaus * 0.55 * under;`);
-};
-const copingMats = { stein: std({ map: T.paverLight, color: 0xd0ccc4, roughness: 0.85 }), granit: std({ map: T.paverDark, roughness: 0.6 }), beton: std({ map: T.concrete, color: 0xd6d6d3, roughness: 0.9 }) };
-const deckMats = { holz: std({ map: T.wood, roughness: 0.75 }), stein: std({ map: T.paverLight, color: 0xc4c0b8, roughness: 0.85 }), beton: std({ map: T.concrete, color: 0xc8c8c6, roughness: 0.9 }), gras: null };
-function setLinerColor() { const h = LINERS[state.liner].hex; mats.liner.color.setHex(h); mats.water.color.setHex(h); mats.waterAR.color.setHex(h); invalidateAR(); }
+const { mats, U, copingMats, deckMats, ground: groundMat } = createMaterials({ aniso, isMobile });
+function applyLiner() {
+  const h = LINERS[state.liner].hex;
+  mats.liner.color.setHex(h); mats.waterAR.color.setHex(h);
+  U.uScatter.value.setHex(h).multiplyScalar(0.3).lerp(new THREE.Color(0.02, 0.2, 0.26), 0.55);
+}
+function setLinerColor() { applyLiner(); invalidateAR(); }
+applyLiner();
 
 /* ---------- Rasen mit Beckenöffnung ---------- */
-const grass = grassTextures(1024); grass.anisotropy = aniso; grass.repeat.set(1, 1);
-const groundMat = new THREE.MeshStandardMaterial({ map: grass, bumpMap: grass, bumpScale: 1.2, roughness: 0.95, metalness: 0 });
-groundMat.onBeforeCompile = (sh) => {
-  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;');
-  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-    varying vec3 vWPos;
-    float h21(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-    float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-      return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
-    float macroNoise(vec2 p){ return 0.5*vn(p/41.0) + 0.3*vn(p/11.0) + 0.2*vn(p/2.7); }`)
-    .replace('#include <map_fragment>', `#include <map_fragment>
-    float mn = macroNoise(vWPos.xz);
-    diffuseColor.rgb *= mix(vec3(0.62, 0.74, 0.5), vec3(1.1, 1.06, 0.86), mn);`);
-};
-const ground = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); ground.name = 'rasen'; ground.receiveShadow = true; scene.add(ground);
-const patch = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); patch.name = 'rasen-vorher'; patch.visible = false; patch.receiveShadow = true; scene.add(patch);
+const ground = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); ground.name = 'rasen'; ground.receiveShadow = true; ground.renderOrder = -1; scene.add(ground);
+const patch = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); patch.name = 'rasen-vorher'; patch.visible = false; patch.receiveShadow = true; patch.renderOrder = -1; scene.add(patch);
 
 /* ---------- Pool, Zubehör, Garten ---------- */
 let pool = null, extras = null, garden = null, gardenKey = '', before = false;
@@ -203,16 +165,16 @@ function rebuild() {
   pool = buildPool(state, matSet(), 'scene');
   pool.group.traverse((o) => { if (o.isMesh && o.name === 'terrasse') o.receiveShadow = true; });
   pool.group.visible = !before; scene.add(pool.group);
-  ground.geometry.dispose(); ground.geometry = groundGeometry(pool.contour);
+  ground.geometry.dispose(); ground.geometry = groundGeometry(pool.contour, 170, 1);
   patch.geometry.dispose(); patch.geometry = patchGeometry(pool.contour);
   const gk = ['minX', 'maxX', 'minZ', 'maxZ'].map((k) => pool.bounds[k].toFixed(2)).join();
-  if (!garden || gk !== gardenKey) { if (garden) { scene.remove(garden.group); garden.dispose(); } garden = buildGarden(pool.bounds); scene.add(garden.group); gardenKey = gk; }
+  if (!garden || gk !== gardenKey) { if (garden) { scene.remove(garden.group); garden.dispose(); } garden = buildGarden(pool.bounds, { isMobile }); scene.add(garden.group); gardenKey = gk; }
   garden.group.visible = state.garden;
   buildExtrasNow(); buildDims();
   const lamps = pool.group.userData.lamps || [];
   lampLights.forEach((l, i) => { const p = lamps[i]; if (p) l.position.set(p.x, p.y, p.z); });
   setLamps(lampLevel);
-  const ext = Math.max(pool.dims.length, pool.dims.width) / 2 + 6, sc = sun.shadow.camera;
+  const ext = Math.max(pool.dims.length, pool.dims.width) / 2 + 9, sc = sun.shadow.camera;
   sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = 200; sc.updateProjectionMatrix();
   shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh();
 }
@@ -314,7 +276,7 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 async function copyLink() { try { await navigator.clipboard.writeText(location.href); toast('Link kopiert'); } catch { toast('Kopieren nicht möglich – Adresszeile nutzen'); } }
 function snap() {                                                  // Bild der aktuellen Szene (ohne Bedienfeld-Verschiebung)
   camera.clearViewOffset(); camera.updateProjectionMatrix();
-  renderer.render(scene, camera);
+  post.render(0);
   const url = canvas.toDataURL('image/jpeg', 0.88);
   applyVO();
   return Promise.resolve(url);
@@ -348,8 +310,12 @@ async function buildAR() {
     const p = buildPool(state, { ...matSet(), glass: mats.glass.clone() }, 'ar');
     const ex = buildExtras(state, p, mats, 'ar');
     const root = new THREE.Group(); root.add(p.group, ex.group);
-    const glb = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, maxTextureSize: 512 });
-    const usdz = await new USDZExporter().parseAsync(root, { quickLookCompatible: true, maxTextureSize: 512 });
+    // AR-Datei klein halten: nur Farbtextur (keine Normal-/Rauheitskarten), keine Pflanzen-Modelle
+    ex.group.traverse((o) => { if (o.userData?.gltf) o.visible = false; });
+    const light = new Map();
+    root.traverse((o) => { if (o.isMesh && o.material && !Array.isArray(o.material)) { if (!light.has(o.material)) { const m = o.material.clone(); m.normalMap = null; m.roughnessMap = null; m.aoMap = null; m.onBeforeCompile = () => {}; if (m.map) m.map.userData.mimeType = 'image/jpeg'; light.set(o.material, m); } o.material = light.get(o.material); } });
+    const glb = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, maxTextureSize: 384 });
+    const usdz = await new USDZExporter().parseAsync(root, { quickLookCompatible: true, maxTextureSize: 192 });
     p.dispose(); ex.dispose();
     const mv = await ensureMV();
     ar.urls.forEach((u) => URL.revokeObjectURL(u));
@@ -423,11 +389,11 @@ canvas.addEventListener('dblclick', () => views.orbit());
 $('#b-ask').addEventListener('click', () => ask());
 $('#b-ar').addEventListener('click', () => openAR());
 
-/* ---------- Sparmodus: schwache Geräte (keine Wolken-Shader, keine Schatten/Punktlichter) ---------- */
+/* ---------- Sparmodus: schwache Geräte (kein AO/Bloom, keine Schatten/Punktlichter) ---------- */
 let lite = false;
 function goLite() {
   if (lite) return; lite = true;
-  sun.castShadow = false; lampLights.forEach((l) => { l.visible = false; });
+  sun.castShadow = false; post.setQuality('low'); lampLights.forEach((l) => { l.visible = false; });
   dpr = Math.max(1, Math.min(dpr, 1.25)); resize();
 }
 if (params.has('lite')) setTimeout(goLite, 0);
@@ -437,7 +403,7 @@ function resize() {
   const w = innerWidth, h = innerHeight;
   if (w === lastW && h === lastH && dpr === lastDpr) { layout(true); return; }
   lastW = w; lastH = h; lastDpr = dpr;
-  renderer.setPixelRatio(dpr); renderer.setSize(w, h, false); camera.aspect = w / h; layout(true);
+  renderer.setPixelRatio(dpr); post.setSize(w, h); camera.aspect = w / h; layout(true);
 }
 let lastW = 0, lastH = 0, lastDpr = 0, rsT = 0;
 addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(resize, 120); });   // Adressleisten-Ein-/Ausblenden löst viele resize-Ereignisse aus
@@ -463,24 +429,24 @@ renderer.setAnimationLoop(() => {
     if (w) w.position.y = -(pool.dims.depth - 0.1) * (1 - e);
     if (k >= 1) { if (w) w.position.y = 0; intro = null; toast(isMobile ? 'Ziehen zum Drehen · zwei Finger zum Zoomen' : 'Ziehen zum Drehen · Scrollen zum Zoomen'); }
   }
-  T.water.offset.x += dt * 0.012; T.water.offset.y += dt * 0.007; causU.uTime.value = clock;
+  U.uTime.value = clock; if (garden && state.garden) garden.update(clock);
   if (extras) extras.update(clock);
   if (lampLevel > 0 && state.extras.light === 'wechsel') applyLightColor(clock);
   if (shadowDirty) { renderer.shadowMap.needsUpdate = true; shadowDirty = false; }
-  renderer.render(scene, camera);
+  post.render(dt);
   if (!started) { started = true; $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); }
   if (ar.building || params.has('fixed')) return;
   if (warm > 0) { warm--; return; }
   acc += dt; nF++;                                                // adaptive Auflösung: bei dauerhaft < ~30 fps schrittweise runter
-  if (nF >= 40) { const avg = acc / nF; acc = 0; nF = 0; if (avg > 0.034) { if (dpr > 1) { dpr = Math.max(1, dpr - 0.25); resize(); warm = 20; } else if (!lite) { goLite(); warm = 20; } } }
+  if (nF >= 40) { const avg = acc / nF; acc = 0; nF = 0; if (avg > 0.034) { if (post.quality === 'high') { post.setQuality('medium'); warm = 20; } else if (dpr > 1) { dpr = Math.max(1, dpr - 0.25); resize(); warm = 20; } else if (!lite) { goLite(); warm = 20; } } }
 });
 
 /* ---------- Start ---------- */
 ui = initUI(api);
-setTime(state.time);
 rebuild();
+await setTime(state.time);
 if (isSheet()) { $('#cfg').classList.add('collapsed'); $('#b-panel').textContent = 'Konfigurieren ▴'; $('#b-panel').setAttribute('aria-expanded', 'false'); }
 layout();
 camera.position.set(9, 6, 11); controls.target.set(0, -0.2, 0); views.orbit(1);
 if (intro) { camera.position.set(-14, 12, 26); controls.target.set(0, -0.2, 0); views.orbit(3600); }
-if (params.has('debug')) window.__app = { THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api };
+if (params.has('debug')) window.__app = { THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api, mats };

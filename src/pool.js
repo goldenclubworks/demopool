@@ -1,6 +1,8 @@
 // Parametrisches Schwimmbecken: Becken (Wand, Boden, Treppe), Wasser, Rand, Terrasse, Abdeckung, Liegen.
 // Koordinaten: Meter, y = oben, Gelände bei y = 0, Beckenmitte im Ursprung, Längsachse = x.
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { rng } from './textures.js';
 
 export const SHAPES = {
   rect: 'Rechteck',
@@ -105,7 +107,7 @@ export function groundGeometry(contour, size = 1800, uvScale = 5) {
 export function patchGeometry(contour) {
   const g = flatGeo(new THREE.ShapeGeometry(toShape(contour)));
   const uv = g.attributes.uv, pos = g.attributes.position;
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / 5, -pos.getZ(i) / 5);
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i), -pos.getZ(i));
   return g;
 }
 
@@ -121,6 +123,68 @@ function ring(outer, inner, y0, h) {
  * mats: { liner, linerDark, water, copingStone|copingDark|copingWood, deck… } siehe main.js (createMaterials)
  * mode: 'scene' (mit Grube, Wasser mit Tiefe) | 'ar' (flach, ohne Grube – das Gelände kann nicht ausgehoben werden)
  */
+const mortarMat = new THREE.MeshStandardMaterial({ color: 0x6d6a65, roughness: 1 });
+
+/** UVs in Metern für Boxen und Halbzylinder (Fliesenmuster bleibt maßstäblich). cx != null: Halbzylinder um (cx, 0). */
+function worldUV(g, cx = null) {
+  const p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), nx = Math.abs(n.getX(i)), ny = Math.abs(n.getY(i)), nz = Math.abs(n.getZ(i));
+    if (ny > 0.7) uv.setXY(i, x, z);
+    else if (cx !== null) uv.setXY(i, Math.atan2(z, x - cx) * Math.hypot(z, x - cx), y);
+    else if (nx > nz) uv.setXY(i, z, y); else uv.setXY(i, x, y);
+  }
+}
+
+/**
+ * Beckenrand aus einzelnen Natursteinplatten (~50 cm) mit Fugen, gefasten Kanten und überstehender Wasserkante.
+ * inner = Beckenkontur, outer = um COPING_W versetzte Kontur (gleiche Punktanzahl). Zufällige Textur-Ausschnitte je Stein.
+ */
+function copingStones(inner, outer, y0 = -0.02, y1 = 0.05) {
+  const N = inner.length, W = COPING_W, R = rng(23), GAP = 0.006, OV = 0.035, B = 0.012;
+  const cum = [0]; for (let i = 0; i < N; i++) cum.push(cum[i] + inner[i].distanceTo(inner[(i + 1) % N]));
+  const total = cum[N], pos = [], nor = [], uvs = [], cols = [], idx = [];
+  const along = (s) => {                                   // Punkt und Querrichtung bei Bogenlänge s
+    s = ((s % total) + total) % total; let i = 0; while (cum[i + 1] < s) i++;
+    const t = (s - cum[i]) / (cum[i + 1] - cum[i]), a = inner[i], b = inner[(i + 1) % N], qa = outer[i], qb = outer[(i + 1) % N];
+    const d = new THREE.Vector2().lerpVectors(qa.clone().sub(a), qb.clone().sub(b), t).divideScalar(W);
+    return { p: new THREE.Vector2().lerpVectors(a, b, t), d };
+  };
+  // Profil quer zur Kante: (s, y) mit s = Abstand von der Beckenkante nach außen
+  const prof = [[-OV, y0], [-OV, y1 - B], [-OV + B, y1], [W - B, y1], [W, y1 - B], [W, y0]];
+  const sizeStep = 0.2;
+  let s0 = 0;
+  while (s0 < total - 0.05) {
+    let len = 0.46 + R() * 0.2; if (total - (s0 + len) < 0.35) len = total - s0;          // Rest nicht als Splitter
+    const a = s0 + GAP / 2, b = s0 + len - GAP / 2, n = Math.max(1, Math.ceil((b - a) / sizeStep));
+    const col = 0.9 + R() * 0.14, warm = (R() - 0.5) * 0.05, ou = R() * 3, ov = R() * 3, swap = R() < 0.5;
+    const pts = []; for (let j = 0; j <= n; j++) pts.push(along(a + ((b - a) * j) / n));
+    for (let k = 0; k < prof.length; k++) {                // ein Streifen je Profilsegment, getrennte Eckpunkte → harte Kanten
+      if (k === prof.length - 1) continue;
+      const [sa, ya] = prof[k], [sb, yb] = prof[k + 1], base = pos.length / 3;
+      for (let j = 0; j <= n; j++) {
+        const { p, d } = pts[j], u = (a - s0) + ((b - a) * j) / n;
+        for (const [sv, yv] of [[sa, ya], [sb, yb]]) {
+          pos.push(p.x + d.x * sv, yv, p.y + d.y * sv); nor.push(0, 1, 0);
+          const flat = k === 2 || k === 3, uu = u + ou, vv = (flat ? sv : yv) + ov;     // Oberseite: (längs, quer), Seiten: (längs, Höhe)
+          if (swap) uvs.push(vv, uu); else uvs.push(uu, vv);
+          cols.push(col * (1 + warm), col, col * (1 - warm));
+        }
+        if (j < n) { const q = base + j * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
+      }
+    }
+    s0 += len;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  // Die Streifen sind je nach Umlaufrichtung nach innen gewickelt: Normalen nach außen/oben ausrichten
+  const nn = g.attributes.normal; let up = 0; for (let i = 0; i < nn.count; i++) up += nn.getY(i);
+  if (up < 0) { g.setIndex(idx.map((v, i) => (i % 3 === 1 ? idx[i + 1] : i % 3 === 2 ? idx[i - 1] : v))); g.computeVertexNormals(); }
+  return g;
+}
+
 export function buildPool(opts, mats, mode = 'scene') {
   const { shape, length: L, width: W, depth: D, steps } = opts;
   const ar = mode === 'ar';
@@ -161,7 +225,7 @@ export function buildPool(opts, mats, mode = 'scene') {
       const d = depthAt(p.x);
       pos.set([p.x, 0, p.y, p.x, -d, p.y], i * 6);
       uv.set([u, 0, u, -d], i * 4);
-      col.set([1, 1, 1, 0.62, 0.66, 0.7], i * 6);
+      col.set([1, 1, 1, 1, 1, 1], i * 6);
       if (i < N) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
     }
     const wg = new THREE.BufferGeometry();
@@ -173,7 +237,7 @@ export function buildPool(opts, mats, mode = 'scene') {
     const fc = offsetPoly(contour, 0.05), nx = Math.max(32, Math.ceil((maxX - minX) / 0.25)), nz = 10;
     const fpos = [], fuv = [], fcol = [], fidx = [];
     for (let i = 0; i <= nx; i++) {
-      const x = minX + 0.0005 + (maxX - minX - 0.001) * (i / nx), sp = spanAt(fc, x) || [0, 0], d = depthAt(x), k = 1 - 0.28 * ((d - 0.8) / 1.6);
+      const x = minX + 0.0005 + (maxX - minX - 0.001) * (i / nx), sp = spanAt(fc, x) || [0, 0], d = depthAt(x), k = 1;
       for (let j = 0; j <= nz; j++) { const z = sp[0] + (sp[1] - sp[0]) * (j / nz); fpos.push(x, -d, z); fuv.push(x, z); fcol.push(k, k, k); }
     }
     for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) { const a = i * (nz + 1) + j, b = a + nz + 1; fidx.push(a, a + 1, b, b, a + 1, b + 1); }
@@ -196,6 +260,7 @@ export function buildPool(opts, mats, mode = 'scene') {
           const lenX = 0.3 * (i + 1) + 0.25, z0 = steps === 'full' ? minZ - 0.25 : maxZ - 1.2, z1 = maxZ + 0.25;
           g = new THREE.BoxGeometry(lenX, h, z1 - z0); g.translate(wall - 0.25 + lenX / 2, top - h / 2, (z0 + z1) / 2);
         }
+        worldUV(g, steps === 'roman' ? wall : null);
         add(g, mats.liner, `stufe${i}`, { parent: stairs });
       }
     }
@@ -204,17 +269,23 @@ export function buildPool(opts, mats, mode = 'scene') {
     const sk = new THREE.Group(); sk.name = 'technik'; group.add(sk);
     const trim = new THREE.MeshStandardMaterial({ color: 0xf2f4f5, roughness: 0.5 });
     const sx = minX + (maxX - minX) * 0.7, sp = spanAt(contour, sx);
-    if (sp) { const m = add(new THREE.BoxGeometry(0.32, 0.1, 0.06), trim, 'skimmer', { parent: sk, cast: false }); m.position.set(sx, WATER_Y + 0.0, sp[1] - 0.02); disposables.push(trim); }
+    if (sp) {                                           // Skimmer: Deckel liegt bündig im Beckenrand, Öffnung in der Wand knapp unter der Wasserlinie
+      const lid = add(new RoundedBoxGeometry(0.36, 0.012, 0.22, 2, 0.005), trim, 'skimmer', { parent: sk, cast: false });
+      lid.position.set(sx, 0.054, sp[1] + COPING_W * 0.5); disposables.push(trim);
+      const mouth = add(new THREE.BoxGeometry(0.34, 0.09, 0.03), trim, 'skimmer-klappe', { parent: sk, cast: false }); mouth.position.set(sx, WATER_Y + 0.02, sp[1] - 0.012);
+    }
     for (const f of [0.3, 0.7]) {
       const x = minX + (maxX - minX) * f, s2 = spanAt(contour, x);
-      if (s2) { const m = add(new THREE.CylinderGeometry(0.04, 0.04, 0.03, 16), trim, 'duese', { parent: sk }); m.rotation.x = Math.PI / 2; m.position.set(x, -0.65, s2[0] + 0.01); }
+      if (s2) { const m = add(new THREE.CylinderGeometry(0.045, 0.045, 0.03, 20), mats.steel, 'duese', { parent: sk }); m.rotation.x = Math.PI / 2; m.position.set(x, -0.65, s2[0] + 0.01); }
     }
     // LED-Scheinwerfer
     const lightN = L > 9 ? 4 : 2, lamps = [];
     for (let k = 0; k < lightN; k++) {
       const x = minX + (maxX - minX) * ((k + 0.5) / lightN), s2 = spanAt(contour, x); if (!s2) continue;
       const side = k % 2 ? 1 : -1, z = side > 0 ? s2[1] - 0.012 : s2[0] + 0.012;
-      const m = add(new THREE.CircleGeometry(0.1, 20), mats.lamp, 'led', { parent: sk, receive: false });
+      const ringM = add(new THREE.RingGeometry(0.098, 0.125, 28), mats.steel, 'led-ring', { parent: sk, receive: false });
+      ringM.position.set(x, -Math.min(0.75, depthAt(x) - 0.2), z + (side > 0 ? -0.003 : 0.003)); ringM.rotation.y = side > 0 ? Math.PI : 0;
+      const m = add(new THREE.CircleGeometry(0.1, 24), mats.lamp, 'led', { parent: sk, receive: false });
       m.position.set(x, -Math.min(0.75, depthAt(x) - 0.2), z); m.rotation.y = side > 0 ? Math.PI : 0;
       lamps.push({ x, z: z - side * 0.35, y: m.position.y });
     }
@@ -231,7 +302,8 @@ export function buildPool(opts, mats, mode = 'scene') {
 
   /* ---- Beckenrand + Terrasse ---- */
   const copeOut = offsetPoly(contour, COPING_W);
-  add(ring(copeOut, contour, -0.02, 0.065), mats.coping, 'rand', { cast: true });
+  add(ring(copeOut, contour, -0.02, 0.05), mortarMat, 'rand-bett', { cast: false });                  // Mörtelbett unter den Steinen (Fugen)
+  add(copingStones(contour, copeOut), mats.coping, 'rand', { cast: true });
   if (opts.deck !== 'gras') {
     const dw = DECK_W, ob = roundedRect((maxX - minX) / 2 + COPING_W + dw, (maxZ - minZ) / 2 + COPING_W + dw, 0.6);
     add(ring(ob, copeOut, -0.02, 0.055), mats.deck, 'terrasse');
