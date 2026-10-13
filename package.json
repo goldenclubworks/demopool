@@ -7,14 +7,19 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
-    "assets": "node scripts/fetch-assets.mjs"
+    "assets": "node scripts/fetch-assets.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@google/model-viewer": "^4.3.1",
+    "jspdf": "^4.2.1",
     "n8ao": "^2.0.1",
     "postprocessing": "^6.39.5",
     "qrcode-generator": "^2.0.4",
     "three": "^0.186.1",
     "vite": "^8.3.3"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.4"
   }
 }

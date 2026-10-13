@@ -11,8 +11,10 @@ import { buildPool, groundGeometry, patchGeometry } from './pool.js';
 import { buildExtras } from './extras.js';
 import { buildGarden } from './garden.js';
 import { COPING_W } from './pool.js';
-import { MODELS, LINERS, STEP_NAMES, COPING, DECK, COVER, TIMES, LIGHTS, EXTRAS, modelById, defaultExtras, priceOf, fmtEur } from './catalog.js';
+import { MODELS, LINERS, STEP_NAMES, COPING, DECK, COVER, TIMES, LIGHTS, EXTRAS, PACKAGES, TEXT, FINANCE, CATALOG, modelById, defaultExtras, priceOf, fmtEur, monthlyRate, yearlyCosts, applyCatalog } from './catalog.js';
 import { initUI } from './ui.js';
+import { track, setSink } from './track.js';
+import { formHtml, readForm, scoreOf, inboxHtml, send as sendLead } from './lead.js';
 
 const $ = (s) => document.querySelector(s);
 const canvas = $('#c');
@@ -21,29 +23,53 @@ const ua = navigator.userAgent;
 const isTouchPhone = /iPhone|iPad|iPod|Android/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isMobile = params.has('mobile') || matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
 const showPrices = params.get('preise') !== '0';
+const embed = params.has('embed');
+if (embed) document.documentElement.classList.add('embed');
 
-/* ---------- Personalisierung per Link: ?firma=…&farbe=%230a6ebd&logo=https://…&mail=anfrage@… ---------- */
+/* ---------- Firmen-Datei: Katalog + Marke + Endpunkte in EINER JSON (?katalog=spa oder ?katalog=https://…/firma.json) ---------- */
+async function loadTenant() {
+  const k = params.get('katalog'); if (!k) return null;
+  const url = /^https:\/\/[^\s"'<>]+$/i.test(k) ? k : /^[a-z0-9_-]{1,24}$/i.test(k) ? `${import.meta.env.BASE_URL}kataloge/${k}.json` : null;
+  if (!url) return { error: true };
+  try { const r = await fetch(url, { credentials: 'omit' }); if (!r.ok) throw new Error(r.status); const j = await r.json(); applyCatalog(j); return j; } catch (e) { console.warn('Katalog konnte nicht geladen werden', e); return { error: true }; }
+}
+const tenant = await loadTenant();
+if (tenant && tenant.error) setTimeout(() => toast('Katalog nicht gefunden – es wird der Standardkatalog angezeigt'), 2500);
+const tb = (tenant && tenant.brand) || {};
+const httpsUrl = (v) => (typeof v === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(v) ? v : '');
+const hexColor = (v) => (/^#?[0-9a-f]{6}$/i.test(v || '') ? '#' + v.replace('#', '') : null);
+const mailOk = (v) => (/^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(v || '') ? v : '');
+/* ---------- Personalisierung: Datei, überschrieben per Link ?firma=…&farbe=%230a6ebd&logo=https://…&mail=anfrage@… ---------- */
 const brand = {
-  firma: (params.get('firma') || '').trim().slice(0, 60),
-  farbe: /^#?[0-9a-f]{6}$/i.test(params.get('farbe') || '') ? '#' + params.get('farbe').replace('#', '') : null,
-  logo: /^https:\/\/[^\s"'<>]+$/i.test(params.get('logo') || '') ? params.get('logo') : null,
-  mail: /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(params.get('mail') || '') ? params.get('mail') : '',
+  firma: (params.get('firma') || tb.firma || '').toString().trim().slice(0, 60),
+  farbe: hexColor(params.get('farbe')) || hexColor(tb.farbe),
+  logo: httpsUrl(params.get('logo')) || httpsUrl(tb.logo) || null,
+  mail: mailOk(params.get('mail')) || mailOk(tb.mail),
+  tel: (tb.tel || '').toString().slice(0, 30), adresse: (tb.adresse || '').toString().slice(0, 100),
+  datenschutz: httpsUrl(tb.datenschutz), impressum: httpsUrl(tb.impressum),
+  lead: httpsUrl(params.get('lead')) || httpsUrl(tb.lead), stats: httpsUrl(params.get('stats')) || httpsUrl(tb.stats),
 };
 if (brand.farbe) document.documentElement.style.setProperty('--accent', brand.farbe);
-if (brand.firma) { $('#brand-name').textContent = brand.firma; document.title = `Pool-Planer – ${brand.firma}`; $('#brand-eyebrow').textContent = 'Ihr Pool-Planer'; }
+$('#brand-name').textContent = brand.firma || TEXT.intro;
+document.title = brand.firma ? `${TEXT.intro} – ${brand.firma}` : TEXT.intro;
+$('#brand-eyebrow').textContent = brand.firma ? TEXT.intro : '3D-Konfigurator';
 if (brand.logo) { const i = $('#brand-logo'); i.src = brand.logo; i.hidden = false; i.addEventListener('error', () => { i.hidden = true; }); }
+{ const f = $('#foot'); const l = [['Impressum', brand.impressum], ['Datenschutz', brand.datenschutz]].filter((x) => x[1]).map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t}</a>`).join(' · '); if (l) f.innerHTML += ` ${l}`; }
+setSink({ url: brand.stats, embed, catalog: CATALOG.id });
 
 /* ---------- Konfiguration ---------- */
-const state = { model: 'marina', shape: 'round', length: 7, width: 3.5, depth: 1.5, steps: 'corner', liner: 'hellblau', coping: 'stein', deck: 'holz', cover: 'none', time: 'day', garden: true, extras: defaultExtras() };
+const first = (o, pref) => (pref in o ? pref : Object.keys(o)[0]);
+const state = { model: MODELS[0].id, shape: 'round', length: 7, width: 3.5, depth: 1.5, steps: 'corner', liner: Object.keys(LINERS)[0], coping: first(COPING, 'stein'), deck: first(DECK, 'holz'), cover: 'none', time: 'day', garden: true, extras: defaultExtras() };
+for (const k of Object.keys(state.extras)) if (!(k in EXTRAS) && !['loungers', 'light'].includes(k)) state.extras[k] = false;
 function applyModel(id) { const m = modelById(id); Object.assign(state, { model: m.id, shape: m.shape, length: m.length, width: m.width, depth: m.depth, steps: m.steps }); }
-applyModel('marina');
+applyModel(MODELS[Math.min(1, MODELS.length - 1)].id);
 const clampNum = (v, a, b, d) => (Number.isFinite(+v) ? Math.min(b, Math.max(a, +v)) : d);
 function applyCfg(c) {
   if (!c || typeof c !== 'object') return;
   if (MODELS.some((m) => m.id === c.model)) applyModel(c.model);
   else if (c.model === 'frei' || ['rect', 'round', 'oval', 'roman', 'kidney'].includes(c.shape)) {      // freie Maße / alte Links ohne Modell
     state.model = 'frei'; if (['rect', 'round', 'oval', 'roman', 'kidney'].includes(c.shape)) state.shape = c.shape;
-    state.length = clampNum(c.length, 3, 16, state.length); state.width = clampNum(c.width, 2, 6.5, state.width); state.depth = clampNum(c.depth, 1, 2.4, state.depth);
+    state.length = clampNum(c.length, 1.5, 16, state.length); state.width = clampNum(c.width, 1, 6.5, state.width); state.depth = clampNum(c.depth, 0.5, 2.4, state.depth);
   }
   if (c.steps in STEP_NAMES) state.steps = c.steps;
   if (c.liner in LINERS) state.liner = c.liner;
@@ -75,6 +101,7 @@ renderer.setPixelRatio(dpr);
 renderer.toneMapping = THREE.NoToneMapping;                         // Tone-Mapping läuft in der Nachbearbeitung (post.js)
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false;
 const scene = new THREE.Scene();
+const stage = new THREE.Group(); scene.add(stage);                 // alles, was zum Becken gehört (verschiebbar im Foto-Modus)
 const camera = new THREE.PerspectiveCamera(38, 1, 0.2, 700);
 const post = createPost(renderer, scene, camera, quality0);
 const controls = new OrbitControls(camera, canvas);
@@ -133,13 +160,13 @@ function setLinerColor() { applyLiner(); invalidateAR(); }
 applyLiner();
 
 /* ---------- Rasen mit Beckenöffnung ---------- */
-const ground = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); ground.name = 'rasen'; ground.receiveShadow = true; ground.renderOrder = -1; scene.add(ground);
-const patch = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); patch.name = 'rasen-vorher'; patch.visible = false; patch.receiveShadow = true; patch.renderOrder = -1; scene.add(patch);
+const ground = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); ground.name = 'rasen'; ground.receiveShadow = true; ground.renderOrder = -1; stage.add(ground);
+const patch = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); patch.name = 'rasen-vorher'; patch.visible = false; patch.receiveShadow = true; patch.renderOrder = -1; stage.add(patch);
 
 /* ---------- Pool, Zubehör, Garten ---------- */
 let pool = null, extras = null, garden = null, gardenKey = '', before = false;
 const lampLights = [];
-for (let i = 0; i < (isMobile ? 2 : 4); i++) { const l = new THREE.PointLight(0x9fe3ff, 0, 9, 1.4); l.visible = false; scene.add(l); lampLights.push(l); }
+for (let i = 0; i < (isMobile ? 2 : 4); i++) { const l = new THREE.PointLight(0x9fe3ff, 0, 9, 1.4); l.visible = false; stage.add(l); lampLights.push(l); }
 let lampLevel = 0;
 const tmpC = new THREE.Color();
 function applyLightColor(tSec = 0) {
@@ -156,19 +183,20 @@ function setLamps(level) {
 }
 const matSet = () => ({ ...mats, coping: copingMats[state.coping], deck: deckMats[state.deck] || deckMats.stein });
 function buildExtrasNow() {
-  if (extras) { scene.remove(extras.group); extras.dispose(); }
-  extras = buildExtras(state, pool, mats, 'scene'); extras.group.visible = !before; scene.add(extras.group);
+  if (extras) { stage.remove(extras.group); extras.dispose(); }
+  extras = buildExtras(state, pool, mats, 'scene'); extras.group.visible = !before; stage.add(extras.group);
 }
 function rebuildExtras() { buildExtrasNow(); shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh(); }
 function rebuild() {
-  if (pool) { scene.remove(pool.group); pool.dispose(); }
+  if (pool) { stage.remove(pool.group); pool.dispose(); }
   pool = buildPool(state, matSet(), 'scene');
   pool.group.traverse((o) => { if (o.isMesh && o.name === 'terrasse') o.receiveShadow = true; });
-  pool.group.visible = !before; scene.add(pool.group);
+  pool.group.visible = !before; stage.add(pool.group);
   ground.geometry.dispose(); ground.geometry = groundGeometry(pool.contour, 170, 1);
+  if (typeof photo !== 'undefined' && photo.on) { occluder.geometry = shadowCatcher.geometry = ground.geometry; }
   patch.geometry.dispose(); patch.geometry = patchGeometry(pool.contour);
   const gk = ['minX', 'maxX', 'minZ', 'maxZ'].map((k) => pool.bounds[k].toFixed(2)).join();
-  if (!garden || gk !== gardenKey) { if (garden) { scene.remove(garden.group); garden.dispose(); } garden = buildGarden(pool.bounds, { isMobile }); scene.add(garden.group); gardenKey = gk; }
+  if (!garden || gk !== gardenKey) { if (garden) { stage.remove(garden.group); garden.dispose(); } garden = buildGarden(pool.bounds, { isMobile }); stage.add(garden.group); gardenKey = gk; }
   garden.group.visible = state.garden;
   buildExtrasNow(); buildDims();
   const lamps = pool.group.userData.lamps || [];
@@ -192,7 +220,7 @@ function labelSprite(text, scale) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); s.scale.set(scale * 2.86, scale, 1); s.renderOrder = 12; return s;
 }
 function buildDims() {
-  if (dimsGroup) { scene.remove(dimsGroup); dimsGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { o.material.map?.dispose(); o.material.dispose(); } }); dimsGroup = null; }
+  if (dimsGroup) { stage.remove(dimsGroup); dimsGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { o.material.map?.dispose(); o.material.dispose(); } }); dimsGroup = null; }
   const { minX, maxX, minZ, maxZ } = pool.bounds, g = new THREE.Group(), y = 0.14, off = COPING_W + 0.45, t = 0.18;
   const zl = maxZ + off, xr = maxX + off, pts = [
     minX, y, zl, maxX, y, zl, minX, y, zl - t, minX, y, zl + t, maxX, y, zl - t, maxX, y, zl + t,
@@ -204,7 +232,7 @@ function buildDims() {
   const a = labelSprite(`${fmt(maxX - minX)} m`, sc); a.position.set((minX + maxX) / 2, y + 0.3, zl + 0.1); g.add(a);
   const b = labelSprite(`${fmt(maxZ - minZ)} m`, sc); b.position.set(xr + 0.1, y + 0.3, (minZ + maxZ) / 2); g.add(b);
   const d = labelSprite(state.depth <= 1.4 ? `Tiefe ${fmt(state.depth)} m` : `Tiefe 1,1–${fmt(state.depth)} m`, sc); d.position.set(0, 0.3, 0); g.add(d);
-  g.visible = dimsOn && !before; scene.add(g); dimsGroup = g;
+  g.visible = dimsOn && !before; stage.add(g); dimsGroup = g;
 }
 
 /* ---------- Kamera ---------- */
@@ -249,7 +277,7 @@ const vo = { x: 0, y: 0, tx: 0, ty: 0, init: false };
 function applyVO() { camera.setViewOffset(innerWidth, innerHeight, vo.x, vo.y, innerWidth, innerHeight); camera.updateProjectionMatrix(); }
 function layout(snap = false) {
   const r = $('#cfg').getBoundingClientRect();
-  if (!isSheet()) { vo.tx = -(r.right + 14) / 2; vo.ty = 0; } else { vo.tx = 0; vo.ty = (r.height + 8 - topUi()) / 2; }   // Szene in die Mitte des freien Bereichs
+  if (photo.on) { vo.tx = 0; vo.ty = 0; } else if (!isSheet()) { vo.tx = -(r.right + 14) / 2; vo.ty = 0; } else { vo.tx = 0; vo.ty = (r.height + 8 - topUi()) / 2; }   // Szene in die Mitte des freien Bereichs
   if (snap || !vo.init) { vo.x = vo.tx; vo.y = vo.ty; vo.init = true; applyVO(); }
 }
 
@@ -282,13 +310,68 @@ function snap() {                                                  // Bild der a
   return Promise.resolve(url);
 }
 async function download() { const a = document.createElement('a'); a.href = await snap(); a.download = 'pool-konfiguration.jpg'; document.body.append(a); a.click(); a.remove(); }
+const nowSlug = () => (brand.firma || TEXT.product).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+const cfgId = () => { let h = 0; const t = location.hash || JSON.stringify(state); for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0; return h.toString(36).toUpperCase().padStart(6, '0').slice(0, 6); };
+const scaleImg = (url, w) => new Promise((res) => { const i = new Image(); i.onload = () => { const c = document.createElement('canvas'); c.width = w; c.height = Math.round((w * i.height) / i.width); c.getContext('2d').drawImage(i, 0, 0, c.width, c.height); res({ url: c.toDataURL('image/jpeg', 0.8), w: c.width, h: c.height }); }; i.onerror = () => res(null); i.src = url; });
+/** Drei feste Ansichten (Außen, Von oben, Nah) in 1200 × 750 für das PDF; danach wird alles zurückgesetzt */
+function captureViews() {
+  const L = state.length, W = state.width, keep = { p: camera.position.clone(), asp: camera.aspect };
+  const dO = Math.max((Math.max(L, W * 1.6) * 0.95 + 4) * 1.2, (L + 4) / (0.76 * 1.6)), dT = Math.max(Math.max(L * 1.15, W * 2.1) + 5, (L + 4) / (0.689 * 1.6), (W + 4) / 0.689);
+  const poses = [['Außen', [0.62 * dO, 0.46 * dO, 0.8 * dO], [0, -0.2, 0]], ['Von oben', [0.001, dT, 0.6], [0, 0, 0]], ['Nah', [L * 0.22, 1.5, W / 2 + 4.2], [-L * 0.05, -0.3, 0]]];
+  camera.clearViewOffset(); camera.aspect = 1.6; renderer.setPixelRatio(1); post.setSize(1200, 750);
+  const out = [];
+  for (const [label, pos, tgt] of poses) {
+    camera.position.set(...pos); camera.lookAt(...tgt); camera.updateProjectionMatrix();
+    if (garden) { const l = garden.lot; camera.position.x = Math.max(-l.x + 1.5, Math.min(l.x - 1.5, camera.position.x)); camera.position.z = Math.max(l.back + 1.5, Math.min(l.front - 1.5, camera.position.z)); }
+    post.render(0); out.push({ label, url: canvas.toDataURL('image/jpeg', 0.88), w: 1200, h: 750 });
+  }
+  camera.position.copy(keep.p); camera.aspect = keep.asp; renderer.setPixelRatio(dpr); lastW = 0; resize(); controls.update();
+  return out;
+}
+/** Hinweise zur Planung (allgemein, keine Rechtsberatung) */
+function planningNotes() {
+  const v = pool.dims.volume, n = [];
+  n.push(v > 100 ? `Mit ca. ${fmt(v)} m³ Beckeninhalt ist in den meisten Bundesländern eine Baugenehmigung nötig. Bitte frühzeitig bei der Gemeinde klären.` : `Pools bis 100 m³ (hier ca. ${fmt(v)} m³) sind in vielen Bundesländern genehmigungsfrei. Die Landesbauordnung und örtliche Satzungen sind trotzdem zu prüfen.`);
+  n.push('Für den Aushub sollte eine Zufahrt von mindestens 2,5 m Breite für den Bagger vorhanden sein.');
+  n.push('Abstand zu Nachbargrenzen, Bäumen und Leitungen (Strom, Wasser, Abwasser) vor der Planung klären.');
+  n.push('Elektroanschluss für Pumpe, Beleuchtung und Wärmepumpe immer durch einen Elektrofachbetrieb.');
+  return n;
+}
+const extraInfo = () => { const p = price(); return { finance: showPrices && FINANCE.enabled ? { rate: monthlyRate(p.total), months: FINANCE.months, apr: FINANCE.apr } : null, yearly: showPrices ? yearlyCosts(pool.dims.volume) : 0, notes: planningNotes() }; };
+let pdfBusy = false;
+async function makePdf() {
+  if (pdfBusy) return; pdfBusy = true; toast('PDF wird erstellt …');
+  try {
+    const { buildPdf } = await import('./pdf.js'), e = extraInfo(), p = price();
+    const doc = await buildPdf({ brand, title: `${TEXT.product}-Konfigurator`, lines: summaryLines(), price: showPrices ? p : null, images: captureViews(), link: location.href, id: cfgId(), notes: e.notes, finance: e.finance, yearly: e.yearly, accent: brand.farbe || getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() });
+    doc.save(`${nowSlug()}-konfiguration-${cfgId()}.pdf`); track('pdf'); toast('PDF gespeichert');
+  } catch (err) { console.warn(err); toast('PDF konnte nicht erstellt werden'); }
+  finally { pdfBusy = false; }
+}
+function mailtoHref() {
+  const lines = summaryLines(), p = price();
+  const body = `Guten Tag,\n\nich interessiere mich für folgende Konfiguration:\n\n${lines.join('\n')}\n${showPrices ? `\nRichtpreis laut Konfigurator: ab ca. ${fmtEur(p.total)}\n` : '\n'}\nMeine Konfiguration: ${location.href}\n\nBitte senden Sie mir ein unverbindliches Angebot.\n\nName / Telefon / PLZ:\n`;
+  return `mailto:${brand.mail}?subject=${encodeURIComponent(TEXT.mailSubject)}&body=${encodeURIComponent(body)}`;
+}
 function ask() {
-  const lines = summaryLines(), p = price(), link = location.href;
-  const priceLine = showPrices ? `\nBeispielpreis laut Konfigurator: ab ca. ${fmtEur(p.total)}\n` : '\n';
-  const body = `Guten Tag,\n\nich interessiere mich für folgenden Pool:\n\n${lines.join('\n')}\n${priceLine}\nMeine Konfiguration: ${link}\n\nBitte senden Sie mir ein unverbindliches Angebot.\n\nName / Telefon / PLZ:\n`;
-  const href = `mailto:${brand.mail}?subject=${encodeURIComponent('Pool-Anfrage')}&body=${encodeURIComponent(body)}`;
-  showModal(`<h2>Ihre Pool-Konfiguration</h2><ul class="sum">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>${showPrices ? `<p><b>ab ca. ${fmtEur(p.total)}</b> (Beispielpreis)</p>` : ''}<p class="small">Unverbindliche Visualisierung. Maße, Preise und Ausführung werden im Angebot bestätigt.</p><div class="row"><a class="solid btn" href="${href}">Per E-Mail anfragen</a><button class="ghost" id="b-copy">Link kopieren</button></div><div class="row"><button class="ghost" data-close>Schließen</button></div>`);
-  $('#b-copy').addEventListener('click', copyLink);
+  const p = price(); track('lead_open');
+  showModal(formHtml({ brand, product: TEXT.product, price: fmtEur(p.total), showPrices }));
+  const form = $('#lead-form'), errEl = $('#lead-err');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const r = readForm(form);
+    if (r.err.length) { errEl.textContent = r.err[0]; errEl.hidden = false; return; }
+    const btn = $('#lead-send'); btn.disabled = true; btn.textContent = 'Wird gesendet …';
+    const img = await scaleImg(await snap(), 640);
+    const payload = { typ: 'anfrage', katalog: CATALOG.id, betreff: TEXT.mailSubject, kunde: r.data, konfiguration: JSON.parse(JSON.stringify(state)), zusammenfassung: summaryLines(), richtpreis: showPrices ? `ab ca. ${fmtEur(p.total)}` : '', link: location.href, bild: img ? img.url : '', bewertung: scoreOf(r.data, p.total), zeitpunkt: new Date().toISOString() };
+    const res = r.spam ? { mode: 'sent' } : await sendLead(brand, payload);
+    if (!r.spam) { track('lead_sent', { modell: state.model, preis: Math.round(p.total), bewertung: payload.bewertung.stufe }); track('lead', payload, { personal: true }); }
+    const pdfBtn = '<button class="ghost" id="b-lead-pdf">Angebots-PDF speichern</button>';
+    if (res.mode === 'sent') showModal(`<h2>Vielen Dank!</h2><p>Ihre Anfrage wurde an <b>${esc(brand.firma || 'den Anbieter')}</b> gesendet. Sie hören in Kürze von uns.</p><div class="row">${pdfBtn}<button class="solid" data-close>Schließen</button></div>`);
+    else if (res.mode === 'demo') showModal(`<h2>Demo: so kommt die Anfrage an</h2><p class="small">Demo-Modus – es wurde <b>nichts gesendet</b>. Mit hinterlegtem Anfrage-Endpunkt landet genau das beim Anbieter (Mail, CRM, Excel):</p>${inboxHtml(payload, brand)}<div class="row">${pdfBtn}${brand.mail ? `<a class="ghost btn" href="${mailtoHref()}">Per E-Mail öffnen</a>` : ''}<button class="solid" data-close>Schließen</button></div>`);
+    else showModal(`<h2>Senden nicht möglich</h2><p>Die Anfrage konnte nicht übermittelt werden. Bitte versuchen Sie es erneut${brand.mail ? ' oder senden Sie uns eine E-Mail' : ''}.</p><div class="row">${brand.mail ? `<a class="solid btn" href="${mailtoHref()}">Per E-Mail anfragen</a>` : ''}<button class="ghost" data-close>Schließen</button></div>`);
+    const b = $('#b-lead-pdf'); if (b) b.addEventListener('click', makePdf);
+  });
 }
 
 /* ---------- AR (iOS Quick Look/USDZ, Android Scene Viewer/WebXR) ---------- */
@@ -329,10 +412,10 @@ async function buildAR() {
 const nextFrames = (n = 2) => new Promise((r) => { const f = (k) => (k <= 0 ? r() : requestAnimationFrame(() => f(k - 1))); f(n); });
 async function openAR() {
   if (!isTouchPhone) {
-    showModal(`<h2>Pool im eigenen Garten ansehen</h2><div class="qr">${qrSvg(location.href)}</div><p>QR-Code mit dem Handy scannen, dort „Im Garten ansehen“ tippen und den Pool auf der Wiese platzieren. Im Maßstab 1:1 sehen Sie, wie viel Platz er im Garten einnimmt.</p><p class="small">iPhone: Safari · Android: Chrome · nur über https</p><button class="solid" data-close>Schließen</button>`);
+    showModal(`<h2>${TEXT.product} im eigenen Garten ansehen</h2><div class="qr">${qrSvg(location.href)}</div><p>QR-Code mit dem Handy scannen, dort „Im Garten ansehen“ tippen und das Becken auf der Wiese platzieren. Im Maßstab 1:1 sehen Sie, wie viel Platz er im Garten einnimmt.</p><p class="small">iPhone: Safari · Android: Chrome · nur über https</p><button class="solid" data-close>Schließen</button>`);
     return;
   }
-  showModal(`<h2>AR vorbereiten</h2><p>Sie brauchen eine <b>freie, ebene Fläche von mindestens ${Math.ceil(state.length + 6)} × ${Math.ceil(state.width + 6)} m</b>. Der Pool erscheint <b>vor Ihnen</b> auf dem Boden und lässt sich per Finger verschieben und drehen.</p><div class="status" id="ar-status"><span class="spin"></span> Modell wird vorbereitet …</div><div class="row"><button class="ghost" data-close>Abbrechen</button><button class="solid" id="ar-go" disabled>AR starten</button></div>`);
+  showModal(`<h2>AR vorbereiten</h2><p>Sie brauchen eine <b>freie, ebene Fläche von mindestens ${Math.ceil(state.length + 6)} × ${Math.ceil(state.width + 6)} m</b>. Das Becken erscheint <b>vor Ihnen</b> auf dem Boden und lässt sich per Finger verschieben und drehen.</p><div class="status" id="ar-status"><span class="spin"></span> Modell wird vorbereitet …</div><div class="row"><button class="ghost" data-close>Abbrechen</button><button class="solid" id="ar-go" disabled>AR starten</button></div>`);
   await nextFrames(2);
   if (ar.stale || !ar.ready) await buildAR();
   const st = $('#ar-status'), go = $('#ar-go'); if (!st || !go) return;
@@ -344,11 +427,80 @@ async function openAR() {
   }, { once: true });
 }
 
+/* ---------- Gartenfoto-Modus: eigenes Foto als Hintergrund, Becken maßstäblich darauf platzieren (Foto bleibt im Browser) ---------- */
+const photo = { on: false, tex: null, aspect: 1, rot: 0, sun: 0, pitch: -14, h: 1.6, saved: null };
+const occluder = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ colorWrite: false })); occluder.renderOrder = -900; occluder.visible = false; stage.add(occluder);   // Boden mit Beckenöffnung: verdeckt die Grube außerhalb des Lochs
+const shadowCatcher = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShadowMaterial({ opacity: 0.38 })); shadowCatcher.position.y = 0.002; shadowCatcher.receiveShadow = true; shadowCatcher.visible = false; shadowCatcher.renderOrder = -800; stage.add(shadowCatcher);
+function photoFit() {                                                // Foto füllt das Bild (Zuschnitt wie CSS cover)
+  if (!photo.tex) return; const va = innerWidth / innerHeight, t = photo.tex; t.repeat.set(1, 1); t.offset.set(0, 0);
+  if (va > photo.aspect) { t.repeat.y = photo.aspect / va; t.offset.y = (1 - t.repeat.y) / 2; } else { t.repeat.x = va / photo.aspect; t.offset.x = (1 - t.repeat.x) / 2; }
+}
+function photoCamera() {
+  camera.fov = 62; camera.position.set(0, photo.h, 0); camera.rotation.set(THREE.MathUtils.degToRad(photo.pitch), 0, 0, 'YXZ'); camera.updateProjectionMatrix();
+  const d = new THREE.Vector3(-60, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(photo.sun)); void d;
+  placeSun();
+}
+function placeSun() {
+  const base = sun.userData.base || (sun.userData.base = sun.position.clone());
+  if (!photo.on) return;
+  sun.position.copy(base).applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(photo.sun)).add(stage.position); sun.target.position.copy(stage.position); sun.target.updateMatrixWorld(); shadowDirty = true;
+}
+function photoStage() { stage.rotation.y = THREE.MathUtils.degToRad(photo.rot); placeSun(); shadowDirty = true; }
+async function photoOpen(file) {
+  if (!file || !/^image\//.test(file.type)) { toast('Bitte ein Foto (JPG oder PNG) wählen'); return; }
+  try {
+    let bmp; try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch { bmp = await createImageBitmap(file); }
+    const k = Math.min(1, 2048 / Math.max(bmp.width, bmp.height)), c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; photo.tex = t; photo.aspect = c.width / c.height;
+  } catch { toast('Das Foto konnte nicht geladen werden'); return; }
+  photo.saved = { fov: camera.fov, pos: camera.position.clone(), tgt: controls.target.clone(), bg: scene.background, time: state.time };
+  photo.on = true; document.documentElement.classList.add('photo-mode'); controls.enabled = false; controls.autoRotate = false; tween = null;
+  if (state.time === 'night') api.change('time', 'day');
+  scene.background = photo.tex; photoFit();
+  if (skybox) skybox.visible = false; ground.visible = false; patch.visible = false; if (garden) garden.group.visible = false; if (dimsGroup) dimsGroup.visible = false;
+  occluder.geometry = shadowCatcher.geometry = ground.geometry; occluder.visible = shadowCatcher.visible = true;
+  { const hf = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(31)) * (innerWidth / innerHeight)), d = (pool.dims.length + 6) / (2 * Math.tan(hf / 2)); stage.position.set(0, 0, -Math.min(40, Math.max(6, d))); }       // Becken samt Terrasse passt ins Bild photo.rot = 0; photo.sun = 0; photo.pitch = -14; photo.h = 1.6;
+  for (const [id, v] of [['ph-rot', 0], ['ph-sun', 0], ['ph-pitch', -14], ['ph-h', 1.6]]) $('#' + id).value = v;
+  photoStage(); photoCamera(); layout(true); track('photo');
+  $('#photo-ui').hidden = false; toast('Becken mit dem Finger oder der Maus an die richtige Stelle ziehen');
+}
+function photoClose() {
+  photo.on = false; document.documentElement.classList.remove('photo-mode'); controls.enabled = true; $('#photo-ui').hidden = true;
+  scene.background = photo.saved.bg; if (photo.tex) photo.tex.dispose(); photo.tex = null;
+  if (skybox) skybox.visible = true; ground.visible = !before; if (garden) garden.group.visible = state.garden; if (dimsGroup) dimsGroup.visible = dimsOn && !before;
+  occluder.visible = shadowCatcher.visible = false; stage.position.set(0, 0, 0); stage.rotation.y = 0;
+  const base = sun.userData.base; if (base) sun.position.copy(base); sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld();
+  camera.fov = photo.saved.fov; camera.updateProjectionMatrix(); camera.position.copy(photo.saved.pos); controls.target.copy(photo.saved.tgt); controls.update(); layout(true); views.orbit(600); shadowDirty = true;
+}
+{ // Platzieren: Ziehen auf dem Bild verschiebt das Becken auf der Bodenebene
+  const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3(), ndc = new THREE.Vector2(); let drag = false;
+  const at = (e) => { ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera); return ray.ray.intersectPlane(plane, hit) ? hit : null; };
+  canvas.addEventListener('pointerdown', (e) => { if (photo.on) { drag = true; canvas.setPointerCapture(e.pointerId); } });
+  canvas.addEventListener('pointermove', (e) => { if (!photo.on || !drag) return; const h = at(e); if (h && h.length() < 60) { stage.position.set(h.x, 0, h.z); placeSun(); } });
+  const up = () => { drag = false; }; canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+  for (const [id, key] of [['ph-rot', 'rot'], ['ph-sun', 'sun'], ['ph-pitch', 'pitch'], ['ph-h', 'h']]) $('#' + id).addEventListener('input', (e) => { photo[key] = +e.target.value; if (key === 'rot') photoStage(); else if (key === 'sun') placeSun(); else photoCamera(); });
+  $('#ph-pick').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; photoOpen(f); });
+  $('#ph-close').addEventListener('click', photoClose); $('#ph-save').addEventListener('click', () => download());
+}
+addEventListener('resize', () => { if (photo.on) photoFit(); });
+
 /* ---------- Bedienung anbinden ---------- */
 let ui = null;
 const api = {
   state, showPrices, free: params.has('frei'),
+  applyPackage(id) {
+    const pk = PACKAGES.find((q) => q.id === id); if (!pk) return;
+    const st = pk.set || {};
+    if (st.coping in COPING) state.coping = st.coping;
+    if (st.deck in DECK) state.deck = st.deck;
+    if (st.cover in COVER) state.cover = st.cover;
+    if ([0, 1, 2, 4].includes(st.loungers)) state.extras.loungers = st.loungers;
+    if (st.light in LIGHTS) state.extras.light = st.light;
+    if (Array.isArray(st.extras)) for (const k of Object.keys(EXTRAS)) state.extras[k] = st.extras.includes(k);
+    track('package', { id }); rebuild(); applyLightColor(performance.now() / 1000); if (state.cover === 'roof') views.wide();
+  },
   change(key, v) {
+    if (typeof v !== 'object') track('option', { key, value: String(v) });
     if (key === 'model') { applyModel(v); rebuild(); views.orbit(); return; }
     state[key] = v;
     if (key === 'steps' || key === 'coping' || key === 'deck') rebuild();
@@ -358,16 +510,17 @@ const api = {
     else if (key === 'garden') { garden.group.visible = v; saveHash(); }
   },
   changeExtra(k, v) {
+    track('option', { key: k, value: String(v) });
     state.extras[k] = v;
     if (k === 'light') { applyLightColor(performance.now() / 1000); saveHash(); ui.refresh(); } else { rebuildExtras(); if (v && k === 'jet') { controls.autoRotate = false; views.flip(); } }
   },
   changeSize(k, v) { state.model = 'frei'; state[k] = v; if (k === 'length' && state.width > v - 0.5) state.width = Math.max(2, v - 0.5); if (k === 'width' && v > state.length - 0.5) state.length = Math.min(16, v + 0.5); scheduleRebuild(); },
-  price, dims: () => pool && pool.dims, summaryLines, snap, download, copyLink, ask, ar: openAR, layout,
-  view(v) { controls.autoRotate = false; views[v](); },
+  price, dims: () => pool && pool.dims, summaryLines, extraInfo, pdf: makePdf, snap, download, copyLink, ask, ar: openAR, layout, packages: PACKAGES,
+  view(v) { if (v === 'photo') { $('#ph-pick').click(); return; } controls.autoRotate = false; views[v](); },
   spin() { controls.autoRotate = !controls.autoRotate; return controls.autoRotate; },
   before(on) { before = on; pool.group.visible = !on; extras.group.visible = !on; patch.visible = on; ground.visible = !on; if (dimsGroup) dimsGroup.visible = dimsOn && !on; shadowDirty = true; },
   toggleDims() { dimsOn = !dimsOn; if (dimsGroup) dimsGroup.visible = dimsOn && !before; return dimsOn; },
-  onStep(n) { const v = STEP_VIEW[n]; if (v) { controls.autoRotate = false; views[v](); } },
+  onStep(n) { track('step', { n }); const v = STEP_VIEW[n]; if (v) { controls.autoRotate = false; views[v](); } },
 };
 controls.addEventListener('start', () => { if (tween) endTween(); if (controls.autoRotate) { controls.autoRotate = false; $('#viewbar [data-v="spin"]').setAttribute('aria-pressed', 'false'); } });
 // Doppeltippen / Doppelklick auf die Szene: zurück zur Standardansicht
@@ -421,9 +574,9 @@ renderer.setAnimationLoop(() => {
   timer.update(); const dt = Math.min(timer.getDelta(), 0.1); clock += dt;
   if (isMobile && !tween && !intro && !controls.autoRotate && performance.now() - lastActive > 900 && (frameNo++ & 1)) return;
   if (tween) tweenStep(dt);
-  controls.update();
+  if (!photo.on) controls.update();
   if (Math.abs(vo.x - vo.tx) > 0.3 || Math.abs(vo.y - vo.ty) > 0.3) { const f = Math.min(1, dt * 9); vo.x += (vo.tx - vo.x) * f; vo.y += (vo.ty - vo.y) * f; applyVO(); wake(); }
-  if (garden) { const l = garden.lot, p = camera.position; p.x = Math.max(-l.x + 1.5, Math.min(l.x - 1.5, p.x)); p.z = Math.max(l.back + 1.5, Math.min(l.front - 1.5, p.z)); p.y = Math.max(0.7, Math.min(45, p.y)); }
+  if (garden && !photo.on) { const l = garden.lot, p = camera.position; p.x = Math.max(-l.x + 1.5, Math.min(l.x - 1.5, p.x)); p.z = Math.max(l.back + 1.5, Math.min(l.front - 1.5, p.z)); p.y = Math.max(0.7, Math.min(45, p.y)); }
   if (intro) {                                                    // Einstieg: Wasser läuft ein, Kamera fährt heran
     intro.t += dt; const k = Math.min(1, Math.max(0, (intro.t - 0.4) / 2.8)), e = 1 - (1 - k) ** 3, w = pool.group.getObjectByName('wasser');
     if (w) w.position.y = -(pool.dims.depth - 0.1) * (1 - e);
@@ -438,11 +591,12 @@ renderer.setAnimationLoop(() => {
   if (ar.building || params.has('fixed')) return;
   if (warm > 0) { warm--; return; }
   acc += dt; nF++;                                                // adaptive Auflösung: bei dauerhaft < ~30 fps schrittweise runter
-  if (nF >= 40) { const avg = acc / nF; acc = 0; nF = 0; if (avg > 0.034) { if (post.quality === 'high') { post.setQuality('medium'); warm = 20; } else if (dpr > 1) { dpr = Math.max(1, dpr - 0.25); resize(); warm = 20; } else if (!lite) { goLite(); warm = 20; } } }
+  if (nF >= 40) { const avg = acc / nF; acc = 0; nF = 0; if (post.quality === 'high' && avg > 0.022) { post.setQuality('medium'); warm = 20; } else if (avg > 0.034) { if (dpr > 1) { dpr = Math.max(1, dpr - 0.25); resize(); warm = 20; } else if (!lite) { goLite(); warm = 20; } } }
 });
 
 /* ---------- Start ---------- */
 ui = initUI(api);
+track('start', { w: innerWidth, mobile: isMobile });
 rebuild();
 await setTime(state.time);
 if (isSheet()) { $('#cfg').classList.add('collapsed'); $('#b-panel').textContent = 'Konfigurieren ▴'; $('#b-panel').setAttribute('aria-expanded', 'false'); }

@@ -1,6 +1,6 @@
 // Bedienung: geführter Ablauf in 5 Schritten, Modellkarten, Extras, Preisleiste, Zusammenfassung.
 import { contourFor } from './pool.js';
-import { MODELS, LINERS, STEP_NAMES, STEP_PRICE, COPING, DECK, COVER, TIMES, LIGHTS, EXTRAS, LOUNGER_PRICE, fmtEur } from './catalog.js';
+import { MODELS, LINERS, STEP_NAMES, STEP_PRICE, COPING, DECK, COVER, TIMES, LIGHTS, EXTRAS, LOUNGER, PACKAGES, TEXT, fmtEur } from './catalog.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -22,10 +22,10 @@ export function initUI(api) {
   const price = (v) => (api.showPrices ? `<small class="p">${fmtEur(v)}</small>` : '');
 
   /* ---------- Schritte aufbauen ---------- */
-  const s1 = `<section class="step" data-step="1"><h2>Wählen Sie Ihr Modell</h2><p class="lead">Fünf Beckenformen, sofort in Ihrem Garten sichtbar.</p>
+  const s1 = `<section class="step" data-step="1"><h2>${esc(TEXT.title)}</h2><p class="lead">${esc(TEXT.lead)}</p>
     <div class="cards" id="o-model">${MODELS.map((m) => `<button class="mc" data-v="${m.id}" aria-pressed="${state.model === m.id}">${outlineSvg(m.shape, m.length, m.width)}<b>${m.name}</b><span>${fmtM(m.length)} × ${fmtM(m.width)} m · ${m.tag}</span>${api.showPrices ? `<em>ab ${fmtEur(m.price)}</em>` : ''}</button>`).join('')}</div>
-    <div class="sec"><div class="lab">Treppe</div>${seg('o-steps', STEP_NAMES, state.steps)}</div>
-    ${api.free ? `<div class="sec"><div class="lab">Freie Maße</div><label>Länge <output id="v-length"></output></label><input id="s-length" type="range" min="3" max="16" step="0.5"><label>Breite <output id="v-width"></output></label><input id="s-width" type="range" min="2" max="6.5" step="0.25"><label>Tiefe <output id="v-depth"></output></label><input id="s-depth" type="range" min="1" max="2.4" step="0.1"></div>` : ''}
+    ${MODELS.some((m) => m.steps !== 'none') ? `<div class="sec"><div class="lab">Treppe</div>${seg('o-steps', STEP_NAMES, state.steps)}</div>` : '<div hidden id="o-steps"></div>'}
+    ${api.free ? `<div class="sec"><div class="lab">Freie Maße</div><label>Länge <output id="v-length"></output></label><input id="s-length" type="range" min="${Math.min(3, ...MODELS.map((m) => m.length))}" max="16" step="0.5"><label>Breite <output id="v-width"></output></label><input id="s-width" type="range" min="${Math.min(2, ...MODELS.map((m) => m.width))}" max="6.5" step="0.25"><label>Tiefe <output id="v-depth"></output></label><input id="s-depth" type="range" min="${Math.min(1, ...MODELS.map((m) => m.depth))}" max="2.4" step="0.1"></div>` : ''}
     <dl class="facts"><dt>Maße</dt><dd id="d-size"></dd><dt>Tiefe</dt><dd id="d-depth"></dd><dt>Wasserfläche</dt><dd id="d-area"></dd><dt>Wasserinhalt</dt><dd id="d-vol"></dd></dl></section>`;
   const s2 = `<section class="step" data-step="2"><h2>Farbe &amp; Beckenrand</h2>
     <div class="sec"><div class="lab">Beckenfarbe</div><div id="o-liner">${Object.entries(LINERS).map(([k, l]) => `<button class="sw" data-v="${k}" title="${l.name}" aria-label="${l.name}" aria-pressed="${state.liner === k}" style="--c:#${l.hex.toString(16).padStart(6, '0')}"></button>`).join('')}</div><p class="note" id="n-liner"></p></div>
@@ -35,13 +35,14 @@ export function initUI(api) {
     <div class="sec"><div class="lab">Terrasse</div>${seg('o-deck', Object.fromEntries(Object.entries(DECK).map(([k, v]) => [k, v.name])), state.deck)}</div>
     <div class="sec"><div class="lab">Umgebung</div>${seg('o-garden', { on: 'Mit Garten', off: 'Ohne' }, state.garden ? 'on' : 'off')}</div>
     <div class="sec"><div class="lab">Tageszeit</div>${seg('o-time', TIMES, state.time)}</div></section>`;
-  const s4 = `<section class="step" data-step="4"><h2>Extras</h2><div class="extras" id="o-extras">${Object.entries(EXTRAS).map(([k, e]) => `<button class="ex" data-k="${k}" aria-pressed="${!!state.extras[k]}"><span class="tick" aria-hidden="true"></span><span class="t"><b>${e.name}</b><i>${e.hint}</i></span>${price(e.price)}</button>`).join('')}</div>
-    <div class="sec"><div class="lab">Liegen ${api.showPrices ? `<small>je ${fmtEur(LOUNGER_PRICE)}</small>` : ''}</div>${seg('o-loungers', { 0: 'Keine', 2: '2 Liegen', 4: '4 Liegen' }, state.extras.loungers)}</div>
+  const s4 = `<section class="step" data-step="4"><h2>Extras</h2>${PACKAGES.length ? `<div class="sec"><div class="lab">Ausstattungspaket <small>mit einem Klick</small></div><div class="pk" id="o-pack">${PACKAGES.map((q) => `<button data-v="${q.id}"><b>${esc(q.name)}</b><span>${esc(q.hint)}</span></button>`).join('')}</div></div>` : ''}<div class="extras" id="o-extras">${Object.entries(EXTRAS).map(([k, e]) => `<button class="ex" data-k="${k}" aria-pressed="${!!state.extras[k]}"><span class="tick" aria-hidden="true"></span><span class="t"><b>${e.name}</b><i>${e.hint}</i></span>${price(e.price)}</button>`).join('')}</div>
+    <div class="sec"><div class="lab">Liegen ${api.showPrices ? `<small>je ${fmtEur(LOUNGER.price)}</small>` : ''}</div>${seg('o-loungers', { 0: 'Keine', 2: '2 Liegen', 4: '4 Liegen' }, state.extras.loungers)}</div>
     <div class="sec"><div class="lab">Beleuchtung</div>${seg('o-light', Object.fromEntries(Object.entries(LIGHTS).map(([k, v]) => [k, v.name])), state.extras.light)}<p class="note">Am schönsten bei „Abend“ oder „Nacht“ (Schritt 3).</p></div></section>`;
-  const s5 = `<section class="step" data-step="5"><h2>Ihr Pool</h2><img id="snap" alt="Ihre Konfiguration" /><ul class="sum" id="sum"></ul>
+  const s5 = `<section class="step" data-step="5"><h2>Ihre Konfiguration</h2><img id="snap" alt="Ihre Konfiguration" /><ul class="sum" id="sum"></ul>
     <div class="sec" id="sum-price"></div>
-    <div class="row"><button class="solid" id="b-final-ask">Unverbindlich anfragen</button><button class="ghost" id="b-final-ar">Im Garten ansehen (AR)</button></div>
-    <div class="row"><button class="ghost" id="b-save">Bild speichern</button><button class="ghost" id="b-link">Link kopieren</button></div></section>`;
+    <div id="sum-extra"></div>
+    <div class="row"><button class="solid" id="b-final-ask">Unverbindlich anfragen</button><button class="ghost" id="b-pdf">Angebots-PDF</button></div>
+    <div class="row"><button class="ghost" id="b-final-ar">Im Garten ansehen (AR)</button><button class="ghost" id="b-save">Bild speichern</button><button class="ghost" id="b-link">Link kopieren</button></div></section>`;
   body.innerHTML = s1 + s2 + s3 + s4 + s5;
   $('#stepper').innerHTML = STEPS.map(([n, l]) => `<button data-s="${n}" aria-label="Schritt ${n}: ${l}"><i>${n}</i><span>${l}</span></button>`).join('');
 
@@ -59,6 +60,12 @@ export function initUI(api) {
   bindSeg('o-loungers', (v) => api.changeExtra('loungers', +v));
   bindSeg('o-light', (v) => api.changeExtra('light', v));
   $('#o-extras').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; const k = b.dataset.k, on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', String(on)); api.changeExtra(k, on); refresh(); });
+  function sync() {
+    pressIn($('#o-coping'), (x) => x.dataset.v === state.coping); pressIn($('#o-deck'), (x) => x.dataset.v === state.deck); pressIn($('#o-cover'), (x) => x.dataset.v === state.cover);
+    pressIn($('#o-loungers'), (x) => +x.dataset.v === state.extras.loungers); pressIn($('#o-light'), (x) => x.dataset.v === state.extras.light);
+    $('#o-extras').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(!!state.extras[b.dataset.k])));
+  }
+  const pack = $('#o-pack'); if (pack) pack.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; pressIn(pack, (x) => x === b); api.applyPackage(b.dataset.v); sync(); refresh(); });
   if (api.free) for (const k of ['length', 'width', 'depth']) $('#s-' + k).addEventListener('input', (e) => { api.changeSize(k, +e.target.value); refresh(); });
 
   let step = 1;
@@ -77,6 +84,7 @@ export function initUI(api) {
   $('#b-next').addEventListener('click', () => (step === 5 ? api.ask() : setStep(step + 1)));
   $('#b-final-ask').addEventListener('click', () => api.ask());
   $('#b-final-ar').addEventListener('click', () => api.ar());
+  $('#b-pdf').addEventListener('click', () => api.pdf());
   $('#b-save').addEventListener('click', () => api.download());
   $('#b-link').addEventListener('click', () => api.copyLink());
 
@@ -87,6 +95,8 @@ export function initUI(api) {
     $('#sum-price').innerHTML = api.showPrices
       ? `<table class="brk">${p.lines.map(([l, v]) => `<tr><td>${esc(l)}</td><td>${fmtEur(v)}</td></tr>`).join('')}<tr class="tot"><td>Gesamt (Beispielpreis)</td><td>ab ca. ${fmtEur(p.total)}</td></tr></table><p class="note">Beispielpreise zur Veranschaulichung. Verbindliche Preise erhalten Sie im Angebot.</p>`
       : '<p class="note">Das verbindliche Angebot erhalten Sie nach Ihrer Anfrage.</p>';
+    const e = api.extraInfo();
+    $('#sum-extra').innerHTML = `${e.finance ? `<p class="note"><b>Ratenzahlung (Richtwert):</b> ca. ${Math.round(e.finance.rate).toLocaleString('de-DE')} € pro Monat bei ${e.finance.months} Monaten.</p>` : ''}${e.yearly ? `<p class="note"><b>Laufende Kosten (Richtwert):</b> ca. ${(Math.round(e.yearly / 10) * 10).toLocaleString('de-DE')} € pro Jahr.</p>` : ''}<details class="hints"><summary>Gut zu wissen vor der Planung</summary><ul>${e.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></details>`;
   }
 
   /* ---------- Preisleiste ---------- */
@@ -123,5 +133,5 @@ export function initUI(api) {
   $('#b-panel').addEventListener('click', (e) => { const c = $('#cfg').classList.toggle('collapsed'); e.currentTarget.setAttribute('aria-expanded', String(!c)); e.currentTarget.textContent = c ? 'Konfigurieren ▴' : 'Einklappen ▾'; api.layout(); });
 
   setStep(1, { silent: true });
-  return { refresh, setStep, get step() { return step; } };
+  return { refresh, sync, setStep, get step() { return step; } };
 }

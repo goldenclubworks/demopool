@@ -20,7 +20,10 @@ npm run preview
 
 Hosting: Vercel (Framework „Vite“, Build `npm run build`, Output `dist`) oder jeder statische Webspace mit https.
 
-## Für eine Poolfirma anpassen: `src/catalog.js`
+## Für eine Firma anpassen: Katalog-Datei (kein Code nötig)
+Siehe **[docs/ONBOARDING.md](docs/ONBOARDING.md)**: Marke, Modelle, Farben, Preise, Pakete und Endpunkte in einer JSON (`?katalog=<name>` oder `?katalog=https://…`). Mitgeliefert: `firma-muster` (Beispiel für eine Firma) und `spa` (Swimspa & Whirlpool). Die Standardwerte stehen in `src/catalog.js`.
+
+## Für eine Poolfirma anpassen: `src/catalog.js` (Standardwerte)
 Dort stehen **alle Modelle, Optionen und Preise** (Beispielwerte):
 - `MODELS`: Name, Form (`rect`, `round`, `oval`, `roman`, `kidney`), Länge, Breite, Tiefe, Treppe, Preis
 - `LINERS`, `COPING`, `DECK`, `COVER`, `LIGHTS`, `EXTRAS`: Namen und Preise
@@ -43,6 +46,10 @@ Firmenname, Farbe, Logo und Anfrage-Adresse kommen per Link (siehe unten). Weite
 Komplett: `https://DEINE-DOMAIN/?firma=Schmidt-Pool&farbe=%230a6ebd&mail=anfrage@schmidt-pool.de`
 | `q` | Grafikqualität erzwingen: `high` (AO, 4× MSAA), `medium` (AO halbe Auflösung), `low` (kein AO/Bloom) | `&q=medium` |
 
+| `katalog` | Firmen-Datei (Name oder https-URL) | `&katalog=spa` |
+| `embed=1` | Einbettung (für iframe), Ereignisse per `postMessage` | `&embed=1` |
+| `lead`, `stats` | Endpunkte (https) für Anfragen und anonyme Statistik | `&lead=https://…` |
+
 Debug: `?debug` (setzt `window.__app`), `?fixed` schaltet die adaptive Auflösung ab. Die Konfiguration steckt im Link (`#cfg=…`) und kann geteilt werden.
 
 ## Dateien
@@ -50,6 +57,14 @@ Debug: `?debug` (setzt `window.__app`), `?fixed` schaltet die adaptive Auflösun
 
 ## Bedienung (Maus und Touch)
 Ziehen = drehen · Scrollen / zwei Finger = zoomen · Doppeltippen/Doppelklick = Standardansicht. Verschieben (Pan) ist bewusst aus, damit man sich nicht verirrt. Kamerafahrten laufen als Bogen um den Pool; wer währenddessen zieht, übernimmt sofort.
+
+## Verkaufs- und B2B-Funktionen
+- **Anfrage-Formular** mit Plausibilitätsprüfung, Einwilligung, Spam-Schutz und automatischer Bewertung (heiß/warm/kalt); ohne Endpunkt Demo-Vorschau „so kommt die Anfrage an“.
+- **Angebots-PDF** (A4, Logo-Farbe, 3 Ansichten, Auswahl, Kostenübersicht, Ratenzahlung, Betriebskosten, Planungshinweise) – erzeugt im Browser.
+- **Ausstattungspakete** Basis / Komfort / Premium, Ratenzahlung und Betriebskosten als Richtwerte.
+- **Mein Foto:** eigenes Gartenfoto hochladen, Becken maßstäblich darauf verschieben, drehen, Sonne und Horizont anpassen (Foto bleibt im Browser).
+- **Statistik-Muster** unter `/dashboard.html`; Einbettung und Marken-Datei siehe oben.
+- **Tests:** `npm test` (Geometrie aller Modelle, Preislogik, Katalog-Prüfung, Lead-Bewertung).
 
 ## Layout
 Breit (Desktop, Tablet quer): Bedienfeld links, Szene wird in den freien Bereich verschoben. Schmal oder hochkant (Handy, Tablet): kompaktes Sheet unten (max. 46 % der Höhe), Szene und Kamera rahmen nur den sichtbaren Bereich. Tippen auf die Szene klappt das Sheet ein; „Zusätzlich“ fährt die Kamera bei Gegenstromanlage und Überdachung auf die passende Seite.

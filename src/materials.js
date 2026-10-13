@@ -31,7 +31,7 @@ export function createMaterials({ aniso = 8, isMobile = false } = {}) {
   /* ---------- Becken: glasierte Mosaikfliesen ---------- */
   const tiles = tileMaps(isMobile ? 512 : 1024, aniso);
   const liner = new THREE.MeshPhysicalMaterial({
-    ...tiles, color: LINERS.hellblau.hex, roughness: 1, metalness: 0, vertexColors: true, side: THREE.DoubleSide,
+    ...tiles, color: Object.values(LINERS)[0].hex, roughness: 1, metalness: 0, vertexColors: true, side: THREE.DoubleSide,
     clearcoat: 0.35, clearcoatRoughness: 0.12, normalScale: new THREE.Vector2(1.1, 1.1),
   });
   liner.onBeforeCompile = (sh) => {
@@ -85,7 +85,7 @@ export function createMaterials({ aniso = 8, isMobile = false } = {}) {
         diffuseColor.a = clamp(0.02 + 0.98 * pow(1.0 - nv, 5.0), 0.0, 1.0);   // Fresnel: steil = durchsichtig, flach = Spiegel
       }`);
   };
-  const waterAR = new THREE.MeshStandardMaterial({ color: LINERS.hellblau.hex, roughness: 0.18, metalness: 0 });
+  const waterAR = new THREE.MeshStandardMaterial({ color: Object.values(LINERS)[0].hex, roughness: 0.18, metalness: 0 });
 
   /* ---------- Beckenrand und Terrasse: Foto-PBR ---------- */
   const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0, ...o });

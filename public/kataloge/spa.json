@@ -1,0 +1,38 @@
+{
+  "id": "spa",
+  "label": "Swimspa & Whirlpool",
+  "text": { "title": "Wählen Sie Ihr Modell", "lead": "Swimspas und Whirlpools, sofort in Ihrem Garten sichtbar.", "product": "Swimspa", "productPlural": "Swimspas", "intro": "Swimspa-Planer", "mailSubject": "Swimspa-Anfrage" },
+  "models": [
+    { "id": "relax", "name": "Relax 220", "tag": "Whirlpool", "shape": "oval", "length": 2.2, "width": 2.2, "depth": 0.95, "steps": "none", "price": 8900 },
+    { "id": "duo", "name": "Duo 300", "tag": "Whirlpool", "shape": "round", "length": 3, "width": 2.2, "depth": 1.0, "steps": "none", "price": 11900 },
+    { "id": "flow4", "name": "Flow 400", "tag": "Swimspa", "shape": "rect", "length": 4, "width": 2.3, "depth": 1.3, "steps": "none", "price": 17900 },
+    { "id": "flow5", "name": "Flow 500", "tag": "Swimspa", "shape": "round", "length": 5, "width": 2.3, "depth": 1.3, "steps": "none", "price": 21900 },
+    { "id": "wave6", "name": "Wave 600", "tag": "Swimspa XL", "shape": "rect", "length": 6, "width": 2.5, "depth": 1.4, "steps": "none", "price": 27900 }
+  ],
+  "liners": {
+    "perl": { "name": "Perlweiß", "hex": "#e6ecef", "price": 0 },
+    "aqua": { "name": "Aqua", "hex": "#4fb7d6", "price": 0 },
+    "graphit": { "name": "Graphit", "hex": "#4a545a", "price": 300 },
+    "saphir": { "name": "Saphir", "hex": "#2a5fa8", "price": 300 }
+  },
+  "stepPrice": { "none": 0, "corner": 0, "roman": 0, "full": 0 },
+  "coping": { "stein": { "name": "Naturstein", "perM": 80 }, "granit": { "name": "Granit", "perM": 120 }, "beton": { "name": "Beton hell", "perM": 55 } },
+  "deck": { "holz": { "name": "Holz", "perM2": 135 }, "stein": { "name": "Stein", "perM2": 120 }, "beton": { "name": "Beton", "perM2": 85 }, "gras": { "name": "Rasen", "perM2": 0 } },
+  "cover": { "none": { "name": "Offen", "perM2": 0 }, "roll": { "name": "Thermoabdeckung", "perM2": 110 }, "roof": { "name": "Überdachung", "perM2": 260 } },
+  "extras": {
+    "jet": { "name": "Gegenstrom-Schwimmanlage", "price": 2900, "hint": "Schwimmen auf der Stelle" },
+    "heatpump": { "name": "Heizung / Wärmepumpe", "price": 2400, "hint": "Ganzjährig nutzbar" },
+    "parasol": { "name": "Sonnenschirm", "price": 690, "hint": "3,0 m, mit Standfuß" },
+    "planters": { "name": "Pflanzkübel", "price": 290, "hint": "4 Stück, bepflanzt" }
+  },
+  "loungerPrice": 190,
+  "setup": { "baseFlat": 900, "perM2": 350, "tech": 1800 },
+  "freePerM2": 2600,
+  "finance": { "enabled": true, "months": 84, "apr": 6.9 },
+  "ops": { "base": 420, "perM3": 40 },
+  "packages": [
+    { "id": "basis", "name": "Basis", "hint": "Einstieg", "set": { "coping": "beton", "deck": "beton", "cover": "roll", "loungers": 0, "light": "weiss", "extras": ["heatpump"] } },
+    { "id": "komfort", "name": "Komfort", "hint": "Ganzjahres-Spaß", "set": { "coping": "stein", "deck": "holz", "cover": "roll", "loungers": 2, "light": "blau", "extras": ["heatpump", "parasol", "planters"] } },
+    { "id": "premium", "name": "Premium", "hint": "Mit Überdachung", "set": { "coping": "granit", "deck": "holz", "cover": "roof", "loungers": 2, "light": "wechsel", "extras": ["jet", "heatpump", "parasol", "planters"] } }
+  ]
+}

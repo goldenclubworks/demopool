@@ -101,6 +101,30 @@
     .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: sp .8s linear infinite; flex: none; }
     @keyframes sp { to { transform: rotate(360deg); } }
 
+
+    .btn.ghost { border: 1px solid var(--line); border-radius: 12px; }
+    #photo-ui { left: 50%; transform: translateX(-50%); bottom: max(14px, env(safe-area-inset-bottom)); width: min(720px, calc(100vw - 20px)); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .ph-title { display: flex; flex-direction: column; gap: 2px; } .ph-title span { font-size: 12px; color: var(--muted); }
+    .ph-sl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 12px; } .ph-sl label { display: flex; flex-direction: column; gap: 0; font-size: 11.5px; }
+    .ph-btn { display: flex; gap: 8px; justify-content: flex-end; } @media (max-width: 560px) { .ph-sl { grid-template-columns: 1fr 1fr; } }
+    .photo-mode #cfg, .photo-mode #viewbar, .photo-mode #actions, .photo-mode #toast.hide { display: none; }
+    /* Anfrage-Formular, Pakete, Demo-Posteingang, Einbettung */
+    #modal-body.card { max-width: 460px; }
+    #modal-body form { text-align: left; } .fld { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; font-size: 12.5px; color: var(--muted); }
+    .fld small { font-weight: 400; opacity: .8; } .fld input, .fld select, .fld textarea { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; min-height: 40px; width: 100%; }
+    .fld textarea { resize: vertical; } .fld input:focus, .fld select:focus, .fld textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } @media (max-width: 420px) { .two { grid-template-columns: 1fr; } }
+    .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+    .chk { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; color: var(--muted); line-height: 1.45; margin: 4px 0 8px; } .chk input { margin-top: 2px; width: 18px; height: 18px; flex: none; accent-color: var(--accent); } .chk a { color: var(--accent); }
+    .err { color: #c0392b; font-size: 12.5px; margin: 4px 0; text-align: left; }
+    .pk { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; } .pk button { flex-direction: column; align-items: flex-start; gap: 2px; border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 10px; min-height: 0; text-align: left; }
+    .pk button b { font-size: 13.5px; } .pk button span { font-size: 11px; color: var(--muted); line-height: 1.3; } .pk button:hover { border-color: var(--accent); } .pk button[aria-pressed="true"] span { color: var(--accent-ink); }
+    .inbox { text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--bg); margin: 8px 0; font-size: 12.5px; }
+    .ib-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; } .ib-score { color: #fff; font-size: 11px; padding: 2px 9px; border-radius: 99px; font-weight: 600; } .ib-meta { margin: 4px 0 8px !important; font-size: 11.5px !important; }
+    .ib-body { display: flex; gap: 10px; align-items: flex-start; } .ib-body img { width: 38%; border-radius: 8px; flex: none; } .ib-body ul { margin: 0; padding-left: 16px; line-height: 1.45; color: var(--ink); }
+    .hints { margin-top: 10px; font-size: 12.5px; color: var(--muted); } .hints summary { cursor: pointer; font-weight: 600; color: var(--ink); } .hints ul { padding-left: 18px; line-height: 1.45; }
+    #foot a { color: var(--muted); }
+    .embed #head { padding-top: 10px; } .embed #brand-eyebrow { display: none; }
     @media (max-width: 1100px) and (orientation: landscape) { #cfg { width: 320px; } }
     @media (max-width: 760px), (orientation: portrait) and (max-width: 1100px) {
       #cfg { top: auto; left: 8px; right: 8px; margin: 0 auto; max-width: 620px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: 46vh; max-height: 46dvh; }
@@ -144,7 +168,13 @@
   </section>
 
   <section id="actions" class="panel"><button class="ghost" id="b-ask">Anfrage senden</button><button class="solid" id="b-ar"><span class="lg">Im Garten ansehen (AR)</span><span class="sm">Im Garten (AR)</span></button></section>
-  <nav id="viewbar" class="panel" aria-label="Ansicht"><button data-v="orbit">Außen</button><button data-v="top">Von oben</button><button data-v="near">Nah</button><button data-v="spin" aria-pressed="false">Rundflug</button><button data-v="dims" aria-pressed="false">Maße</button><button data-v="before" aria-pressed="false">Vorher</button></nav>
+  <nav id="viewbar" class="panel" aria-label="Ansicht"><button data-v="orbit">Außen</button><button data-v="top">Von oben</button><button data-v="near">Nah</button><button data-v="spin" aria-pressed="false">Rundflug</button><button data-v="dims" aria-pressed="false">Maße</button><button data-v="before" aria-pressed="false">Vorher</button><button data-v="photo" title="Eigenes Gartenfoto hochladen – bleibt auf Ihrem Gerät">Mein Foto</button></nav>
+  <input type="file" id="ph-pick" accept="image/*" hidden />
+  <section id="photo-ui" class="panel" hidden aria-label="Gartenfoto">
+    <div class="ph-title"><b>Ihr Garten</b><span>Ziehen Sie das Becken an die richtige Stelle. Das Foto bleibt auf Ihrem Gerät.</span></div>
+    <div class="ph-sl"><label>Drehen<input id="ph-rot" type="range" min="0" max="360" step="1" value="0"></label><label>Sonne<input id="ph-sun" type="range" min="0" max="360" step="1" value="0"></label><label>Horizont<input id="ph-pitch" type="range" min="-40" max="8" step="1" value="-14"></label><label>Höhe<input id="ph-h" type="range" min="0.6" max="3.5" step="0.1" value="1.6"></label></div>
+    <div class="ph-btn"><button class="ghost" id="ph-close">Zurück</button><button class="solid" id="ph-save">Bild speichern</button></div>
+  </section>
 
   <div id="toast" class="panel" role="status"></div>
   <div id="modal" hidden><div id="modal-body" class="panel card"></div></div>
