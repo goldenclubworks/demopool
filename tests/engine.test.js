@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { buildPool, contourFor, SHAPES } from '../src/pool.js';
 import { MODELS, LINERS, COPING, DECK, COVER, EXTRAS, applyCatalog, priceOf, monthlyRate, defaultExtras, modelById } from '../src/catalog.js';
 import { readForm, scoreOf } from '../src/lead.js';
+import { buildLawn } from '../src/lawn.js';
 import { readFileSync, readdirSync } from 'node:fs';
 
 const stubMats = () => new Proxy({}, { get: () => new THREE.MeshBasicMaterial() });
@@ -22,6 +23,14 @@ describe('Beckengeometrie', () => {
       p.dispose();
     });
   }
+});
+
+describe('Rasenhalme', () => {
+  it('werden nur außerhalb der Terrasse verteilt und sind endlich', () => {
+    const l = buildLawn({ hx: 6, hz: 4 }, { count: 3000 }), m = new THREE.Matrix4(), v = new THREE.Vector3();
+    expect(l.count).toBeGreaterThan(500);
+    for (let i = 0; i < l.count; i++) { l.getMatrixAt(i, m); v.setFromMatrixPosition(m); expect(Number.isFinite(v.x + v.y + v.z)).toBe(true); expect(Math.abs(v.x) > 6 || Math.abs(v.z) > 4).toBe(true); }
+  });
 });
 
 describe('Preis', () => {

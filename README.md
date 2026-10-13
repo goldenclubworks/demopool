@@ -44,7 +44,7 @@ Firmenname, Farbe, Logo und Anfrage-Adresse kommen per Link (siehe unten). Weite
 | `lite` | Sparmodus erzwingen (kein Wolken-Himmel, keine Schatten) | `&lite` |
 
 Komplett: `https://DEINE-DOMAIN/?firma=Schmidt-Pool&farbe=%230a6ebd&mail=anfrage@schmidt-pool.de`
-| `q` | Grafikqualität erzwingen: `high` (AO, 4× MSAA), `medium` (AO halbe Auflösung), `low` (kein AO/Bloom) | `&q=medium` |
+| `q` | Start-Stufe: `high` (Standard: AO, Glow), `medium` (ohne AO), `low` (nichts); `scale=0.8` feste Auflösung, `fixed` Regler aus | `&q=medium` |
 
 | `katalog` | Firmen-Datei (Name oder https-URL) | `&katalog=spa` |
 | `embed=1` | Einbettung (für iframe), Ereignisse per `postMessage` | `&embed=1` |
@@ -65,6 +65,18 @@ Ziehen = drehen · Scrollen / zwei Finger = zoomen · Doppeltippen/Doppelklick =
 - **Mein Foto:** eigenes Gartenfoto hochladen, Becken maßstäblich darauf verschieben, drehen, Sonne und Horizont anpassen (Foto bleibt im Browser).
 - **Statistik-Muster** unter `/dashboard.html`; Einbettung und Marken-Datei siehe oben.
 - **Tests:** `npm test` (Geometrie aller Modelle, Preislogik, Katalog-Prüfung, Lead-Bewertung).
+
+## Preloader und Datenschutz
+Vor dem ersten Bild lädt ein Preloader mit Prozentanzeige alle nötigen Dateien (Boden, Terrasse, Himmel); erst dann erscheint die Szene, so gibt es keinen schwarzen Boden mehr. Pflanzen-Modelle, weitere Beläge und die übrigen Tageszeiten laden danach leise im Hintergrund (ca. 7 MB vorab statt vorher 32 MB). Der Konfigurator verwendet **nur eigene Dateien**: keine externen Server oder Schriften, keine Cookies, kein localStorage/sessionStorage/IndexedDB, kein Tracking (gemessen im Test). Das gilt auch für die Foto-Funktion (das Foto bleibt im Browser). Statistik und Anfragen werden nur gesendet, wenn eine Firma dafür Adressen hinterlegt. Hinweis: Wird auf Vercel „Web Analytics“ oder „Speed Insights“ eingeschaltet, ist das eine eigene Datenverarbeitung und gehört in die Datenschutzerklärung. Keine Rechtsberatung.
+
+## Layout
+Breit (Desktop, Tablet quer): Bedienfeld links, Szene wird in den freien Bereich verschoben. Schmal oder hochkant (Handy, Tablet): kompaktes Sheet unten (max. 46 % der Höhe), Szene und Kamera rahmen nur den sichtbaren Bereich. Tippen auf die Szene klappt das Sheet ein; „Zusätzlich“ fährt die Kamera bei Gegenstromanlage und Überdachung auf die passende Seite.
+
+## Optik
+Foto-HDRI als Himmel und Beleuchtung (Tag, Abend, Nacht; Sonne wird aus dem Bild gelesen), PBR-Materialien (Mosaikfliesen mit Fugen und Glasur, Natursteinplatten einzeln mit Fugen, Holzdielen, Rasen), Wasser mit Fresnel-Spiegelung, Wellen, Lichtmuster und Tiefenfärbung, Ambient Occlusion (N8AO), Bloom, Vignette. Hecken und Bäume bestehen aus tausenden instanziierten Blatt-Karten.
+
+## Performance
+Immer höchste Qualität („high“) bei 60 fps; reicht ein Gerät nicht, sinkt zuerst nur die Auflösung (bis 52 %), dann erst werden Effekte reduziert, bei Erholung geht es wieder hoch. Messung, Maßnahmen und Ergebnisse: **[docs/PERFORMANCE.md](docs/PERFORMANCE.md)** (high am Tag: 74 ms → 13 ms bei 4,2 Megapixel). Kein Wind/keine ständige Vertex-Animation, Garten wird einmal gebaut, Leerlauf mit 30 fps. Getestet in Chrome, Firefox und der Safari-Engine am Desktop sowie iPhone-, iPad- und Pixel-Größen.
 
 ## Preloader und Datenschutz
 Vor dem ersten Bild lädt ein Preloader mit Prozentanzeige alle nötigen Dateien (Boden, Terrasse, Himmel); erst dann erscheint die Szene, so gibt es keinen schwarzen Boden mehr. Pflanzen-Modelle, weitere Beläge und die übrigen Tageszeiten laden danach leise im Hintergrund (ca. 7 MB vorab statt vorher 32 MB). Der Konfigurator verwendet **nur eigene Dateien**: keine externen Server oder Schriften, keine Cookies, kein localStorage/sessionStorage/IndexedDB, kein Tracking (gemessen im Test). Das gilt auch für die Foto-Funktion (das Foto bleibt im Browser). Statistik und Anfragen werden nur gesendet, wenn eine Firma dafür Adressen hinterlegt. Hinweis: Wird auf Vercel „Web Analytics“ oder „Speed Insights“ eingeschaltet, ist das eine eigene Datenverarbeitung und gehört in die Datenschutzerklärung. Keine Rechtsberatung.

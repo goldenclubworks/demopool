@@ -6,7 +6,7 @@ const Z = new THREE.Vector3(0, 0, 1);
 
 /** Material für Blatt-Karten: Alpha-Test mit harten Kanten (SMAA glättet), Normalen aus Instanz-Richtung `aDir` (weiche, volle Kronen). Bewusst ohne Wind: ruhiges Bild, weniger Last. */
 export function leafMaterial(map) {
-  const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.95, metalness: 0, color: 0xd9e6d0 });
+  const m = new THREE.MeshLambertMaterial({ map, alphaTest: 0.45, side: THREE.DoubleSide, color: 0xd9e6d0 });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aDir;')
       .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal = normalize(transpose(mat3(instanceMatrix)) * aDir);');

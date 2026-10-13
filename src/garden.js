@@ -7,6 +7,7 @@ import { COPING_W, DECK_W } from './pool.js';
 import { leafCard, rng } from './textures.js';
 import { pbr, loadModel } from './assets.js';
 import { leafMaterial, leafCloud, hedge, tree } from './foliage.js';
+import { buildLawn } from './lawn.js';
 
 let sh = null;
 function shared() {
@@ -28,7 +29,8 @@ function shared() {
 const half = (b) => ({ hx: (b.maxX - b.minX) / 2 + COPING_W + DECK_W, hz: (b.maxZ - b.minZ) / 2 + COPING_W + DECK_W });
 
 /** maxBounds: Beckenmaße der größten Variante (bestimmt Grundstück, Hecke, Bäume); mit fit() folgt der Rest dem aktuellen Becken. */
-export function buildGarden(maxBounds, { isMobile = false } = {}) {
+export function buildGarden(maxBounds, opts = {}) {
+  const { isMobile = false } = opts;
   const M = shared(), group = new THREE.Group(); group.name = 'garten';
   const fixed = new THREE.Group(), adaptive = new THREE.Group(); group.add(fixed, adaptive);
   const geos = []; let adaptiveGeos = [], alive = true;
@@ -67,12 +69,13 @@ export function buildGarden(maxBounds, { isMobile = false } = {}) {
     loadModel('grass_medium_02').then((m) => { if (!alive) return; for (let i = 0; i < Math.floor(len / 2.2); i++) { const c = m.clone(); c.scale.setScalar(0.9 + R() * 0.7); c.position.set(x + (R() - 0.5) * 0.7, 0.15, z0 + 0.6 + i * 2.2 + R()); c.rotation.y = R() * 6; fixed.add(c); } });
   }
 
-  let key = '';
+  let key = '', lawnOn = !opts.noLawn;
   /** Sichtschutz, Leuchten und Lichterkette an die aktuelle Terrasse anpassen */
   function fit(bounds) {
     const k = ['minX', 'maxX', 'minZ', 'maxZ'].map((n) => bounds[n].toFixed(2)).join(); if (k === key) return; key = k;
     for (const c of [...adaptive.children]) adaptive.remove(c); adaptiveGeos.forEach((g) => g.dispose()); adaptiveGeos = [];
     const A = mk(adaptiveGeos, adaptive), { hx: ax, hz: az } = half(bounds);
+    if (lawnOn) { const l = buildLawn({ hx: ax + 0.1, hz: az + 0.1 }, { count: isMobile ? 6000 : 15000 }); adaptive.add(l); adaptiveGeos.push({ dispose() { l.dispose(); } }); }
     const sw = ax * 2, sz = -az - 0.05, sy = 1.85, slatH = 0.145, gapH = 0.012, n = Math.floor(sy / (slatH + gapH)), F = rng(7);
     /* Sichtschutz: horizontale Holzlamellen zwischen anthrazitfarbenen Pfosten */
     for (let i = 0; i < n; i++) {
@@ -97,6 +100,7 @@ export function buildGarden(maxBounds, { isMobile = false } = {}) {
 
   return {
     group, lot: { x: lotX, front: lotFront, back: lotBack }, fit,
+    setLawn(on) { lawnOn = on; key = ''; },
     setNight(level) { M.glow.emissiveIntensity = level * 3.2; },
     dispose() { alive = false; for (const g of [...geos, ...adaptiveGeos]) g.dispose(); group.traverse((o) => { if (o.isInstancedMesh) o.geometry.dispose(); }); },
   };

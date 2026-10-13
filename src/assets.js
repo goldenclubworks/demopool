@@ -62,7 +62,11 @@ function findSun(t) {
   }
   const k = upper >= lower ? 0 : 1, dir = new THREE.Vector3(ax[k], ay[k], az[k]).normalize();
   const col = new THREE.Color(cr / Math.max(sum, 1e-6), cg / Math.max(sum, 1e-6), cb / Math.max(sum, 1e-6)); col.multiplyScalar(1 / Math.max(col.r, col.g, col.b, 1e-6));
-  return { dir, color: col, peak: max };
+  // Horizontfarbe (Mittelwert des Bandes um die Horizontlinie): Farbe des Dunstes in der Ferne
+  const hz = new THREE.Color(); let hn = 0;
+  for (let y = Math.floor(h * 0.47); y < Math.floor(h * 0.5); y += 2) for (let x = 0; x < w; x += 8) { const i = (y * w + x) * 4; hz.r += f(data[i]); hz.g += f(data[i + 1]); hz.b += f(data[i + 2]); hn++; }
+  hz.multiplyScalar(1 / Math.max(hn, 1));
+  return { dir, color: col, peak: max, horizon: hz };
 }
 
 /* ---------- glTF ---------- */

@@ -180,3 +180,15 @@ export function leafCard(kind = 'laub', size = 512, seed = 5) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.generateMipmaps = true; t.needsUpdate = true;
   return t;
 }
+
+/** Kachelbare Rauschtextur für den Rasen: R = große Flecken, G = mittlere Flecken, B = Mähstreifen-Störung (256², einmalig, ersetzt Rauschen pro Pixel im Shader) */
+export function macroNoiseTexture(size = 256) {
+  const c = canvas(size, size), x = c.getContext('2d'), img = x.createImageData(size, size);
+  const lo = [1, 2, 3].map((i) => makeNoise(2100 + i, 2 * 2 ** (i - 1))), mid = [1, 2, 3].map((i) => makeNoise(2200 + i, 6 * 2 ** (i - 1))), hi = [1, 2].map((i) => makeNoise(2300 + i, 3 * 2 ** (i - 1)));
+  for (let y = 0; y < size; y++) for (let xx = 0; xx < size; xx++) {
+    const i = (y * size + xx) * 4;
+    img.data[i] = 255 * fbm(lo, xx / size, y / size, 1, 3); img.data[i + 1] = 255 * fbm(mid, xx / size, y / size, 1, 3); img.data[i + 2] = 255 * fbm(hi, xx / size, y / size, 1, 2); img.data[i + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  return finish(new THREE.CanvasTexture(c), { srgb: false, repeat: [1, 1], aniso: 1 });
+}

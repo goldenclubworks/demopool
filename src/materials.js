@@ -1,6 +1,6 @@
 // Materialien: Mosaik-Becken mit Unterwasser-Optik, Wasseroberfläche (Fresnel, Wellen, Spiegelung), Beckenrand, Terrasse, Rasen.
 import * as THREE from 'three';
-import { tileMaps, waterNormal, slatTexture } from './textures.js';
+import { tileMaps, waterNormal, slatTexture, macroNoiseTexture } from './textures.js';
 import { pbr } from './assets.js';
 import { LINERS } from './catalog.js';
 
@@ -32,7 +32,7 @@ export function createMaterials({ aniso = 8, isMobile = false } = {}) {
   const tiles = tileMaps(isMobile ? 512 : 1024, aniso);
   const liner = new THREE.MeshPhysicalMaterial({
     ...tiles, color: Object.values(LINERS)[0].hex, roughness: 1, metalness: 0, vertexColors: true, side: THREE.DoubleSide,
-    clearcoat: 0.35, clearcoatRoughness: 0.12, normalScale: new THREE.Vector2(1.1, 1.1),
+    normalScale: new THREE.Vector2(1.1, 1.1),
   });
   liner.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
@@ -109,22 +109,18 @@ export function createMaterials({ aniso = 8, isMobile = false } = {}) {
 
   /* ---------- Rasen ---------- */
   const grassSet = pbr('grass', { metersPerTile: 1.8, aniso, rough: false });
-  const ground = new THREE.MeshStandardMaterial({ map: grassSet.map, normalMap: grassSet.normalMap, color: new THREE.Color(0.62, 0.74, 0.48), roughness: 1, metalness: 0, transparent: true });
+  const ground = new THREE.MeshStandardMaterial({ map: grassSet.map, normalMap: grassSet.normalMap, color: new THREE.Color(0.55, 0.74, 0.40), roughness: 1, metalness: 0, transparent: true });
   ground.normalScale.set(0.8, 0.8);
+  const noiseTex = macroNoiseTexture();
   ground.onBeforeCompile = (sh) => {
+    sh.uniforms.uNoise = { value: noiseTex };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', VPOS).replace('#include <begin_vertex>', VPOS_SET);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      varying vec3 vWPos;
-      float h21(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-      float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-        return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
-      float macroNoise(vec2 p){ return 0.5*vn(p/41.0) + 0.3*vn(p/11.0) + 0.2*vn(p/2.7); }`)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos; uniform sampler2D uNoise;')
       .replace('#include <map_fragment>', `#include <map_fragment>
-      // Anti-Kachelung: zweite, größere Abtastung moduliert die Helligkeit; Makro-Flecken und Mähstreifen
-      float big = texture2D(map, vMapUv * 0.173 + 0.31).g;
-      float mn = macroNoise(vWPos.xz);
-      float stripe = 0.5 + 0.5 * sin(vWPos.x * 1.7 + 4.0 * vn(vWPos.xz * 0.05));
-      diffuseColor.rgb *= (0.78 + 0.5 * big) * mix(vec3(0.7, 0.84, 0.55), vec3(1.12, 1.07, 0.88), mn) * (0.95 + 0.07 * stripe);
+      // Flecken und Mähstreifen aus einer kleinen Rauschtextur (statt Rauschen pro Pixel): große/mittlere Helligkeit und Farbton, Streifen längs x
+      vec3 nz = texture2D(uNoise, vWPos.xz / 160.0).rgb, nm = texture2D(uNoise, vWPos.xz / 23.0 + 0.37).rgb;
+      float stripe = 0.5 + 0.5 * sin(vWPos.x * 1.7 + 6.0 * nz.b);
+      diffuseColor.rgb *= (0.82 + 0.4 * nm.g) * mix(vec3(0.7, 0.86, 0.52), vec3(1.1, 1.08, 0.82), clamp((nz.r * 0.6 + nm.r * 0.4 - 0.5) * 1.7 + 0.35, 0.0, 1.0)) * (0.95 + 0.07 * stripe);
       diffuseColor.a *= 1.0 - smoothstep(70.0, 110.0, length(vWPos.xz));`);
   };
 
