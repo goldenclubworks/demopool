@@ -3,7 +3,19 @@ import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-const texLoader = new THREE.TextureLoader();
+/* Fortschritt: alle Dateien laufen über einen Manager, der Preloader zeigt den Anteil in Prozent. Nur eigene Dateien, keine externen Server. */
+export const manager = new THREE.LoadingManager();
+const listeners = new Set(); let lastActivity = performance.now(), total = 0, done = 0;
+manager.onStart = (u, l, t) => { total = t; lastActivity = performance.now(); };
+manager.onProgress = (u, l, t) => { total = t; done = l; lastActivity = performance.now(); listeners.forEach((f) => f(l / Math.max(1, t))); };
+manager.onError = (u) => console.warn('Datei konnte nicht geladen werden:', u);
+export const onProgress = (f) => listeners.add(f);
+/** Löst auf, wenn alle angeforderten Dateien geladen sind und 350 ms lang keine neue dazukam (Spät-Anforderungen werden mitgenommen). */
+export function whenLoaded(maxMs = 30000) {
+  const t0 = performance.now();
+  return new Promise((res) => { const tick = () => { const now = performance.now(); if ((done >= total && now - lastActivity > 350) || now - t0 > maxMs) res(); else setTimeout(tick, 100); }; tick(); });
+}
+const texLoader = new THREE.TextureLoader(manager);
 const base = import.meta.env.BASE_URL;
 
 function tex(url, srgb, aniso, mpt) {
@@ -15,15 +27,17 @@ function tex(url, srgb, aniso, mpt) {
 }
 
 /** PBR-Satz {map, normalMap, roughnessMap}; `metersPerTile` = Kantenlänge einer Kachel in Metern. */
-export function pbr(name, { metersPerTile = 1, aniso = 8 } = {}) {
-  return { map: tex(`textures/${name}_diff.jpg`, true, aniso, metersPerTile), normalMap: tex(`textures/${name}_nor.jpg`, false, aniso, metersPerTile), roughnessMap: tex(`textures/${name}_rough.jpg`, false, aniso, metersPerTile) };
+export function pbr(name, { metersPerTile = 1, aniso = 8, rough = true } = {}) {
+  const set = { map: tex(`textures/${name}_diff.jpg`, true, aniso, metersPerTile), normalMap: tex(`textures/${name}_nor.jpg`, false, aniso, metersPerTile) };
+  if (rough) set.roughnessMap = tex(`textures/${name}_rough.jpg`, false, aniso, metersPerTile);
+  return set;
 }
 
 /* ---------- HDRI ---------- */
 const hdriCache = new Map();
 export function loadHDRI(name) {
   if (!hdriCache.has(name)) {
-    hdriCache.set(name, new HDRLoader().loadAsync(`${base}hdri/${name}.hdr`).then((t) => {
+    hdriCache.set(name, new HDRLoader(manager).loadAsync(`${base}hdri/${name}.hdr`).then((t) => {
       t.mapping = THREE.EquirectangularReflectionMapping;
       t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = true; t.needsUpdate = true;
       return { texture: t, sun: findSun(t) };
@@ -60,8 +74,11 @@ function findSun(t) {
 }
 
 /* ---------- glTF ---------- */
+/* Pflanzen-Modelle sind nicht kritisch: sie laden erst nach dem Preloader (eigener Loader, ohne Fortschrittsanzeige) und erscheinen dann */
+let gate = Promise.resolve();
+export const setModelGate = (p) => { gate = p; };
 const gltfCache = new Map();
 export function loadModel(id) {
-  if (!gltfCache.has(id)) gltfCache.set(id, new GLTFLoader().loadAsync(`${base}models/${id}/${id}.gltf`).then((g) => g.scene));
+  if (!gltfCache.has(id)) gltfCache.set(id, gate.then(() => new GLTFLoader().loadAsync(`${base}models/${id}/${id}.gltf`)).then((g) => g.scene));
   return gltfCache.get(id);
 }

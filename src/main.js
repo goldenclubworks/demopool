@@ -6,7 +6,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { USDZExporter } from 'three/addons/exporters/USDZExporter.js';
 import { createMaterials } from './materials.js';
 import { createPost } from './post.js';
-import { loadHDRI } from './assets.js';
+import { loadHDRI, onProgress, whenLoaded, setModelGate } from './assets.js';
 import { buildPool, groundGeometry, patchGeometry } from './pool.js';
 import { buildExtras } from './extras.js';
 import { buildGarden } from './garden.js';
@@ -137,7 +137,7 @@ async function setTime(key) {
     // weich (Mip-Bias) und der Boden der Kulisse wird zur Rasenfarbe gezogen, damit der Übergang vom Rasen nahtlos ist
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vLY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLY = position.y;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLY;')
-      .replace('#include <map_fragment>', `vec4 sampledDiffuseColor = texture2D( map, vMapUv, 2.5 ); diffuseColor *= sampledDiffuseColor;
+      .replace('#include <map_fragment>', `vec4 sampledDiffuseColor = texture2D( map, vMapUv, 1.5 ); diffuseColor *= sampledDiffuseColor;
       float gm = smoothstep(0.0, -1.5, vLY); float gl = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.42, 0.18) * gl * ${t.grass.toFixed(2)}, gm);`);
   };
@@ -150,7 +150,9 @@ async function setTime(key) {
 
 /* ---------- Materialien ---------- */
 const aniso = Math.min(isMobile ? 4 : 16, renderer.capabilities.getMaxAnisotropy());
-const { mats, U, copingMats, deckMats, ground: groundMat } = createMaterials({ aniso, isMobile });
+const { mats, U, copingMats, deckMats, ground: groundMat, ensure, prefetch } = createMaterials({ aniso, isMobile });
+const loaded = new Promise((res) => setTimeout(() => whenLoaded().then(res), 0));      // alle bis hierher angeforderten Dateien
+setModelGate(loaded);
 function applyLiner() {
   const h = LINERS[state.liner].hex;
   mats.liner.color.setHex(h); mats.waterAR.color.setHex(h);
@@ -181,7 +183,7 @@ function setLamps(level) {
   if (garden) garden.setNight(level);
   applyLightColor(performance.now() / 1000);
 }
-const matSet = () => ({ ...mats, coping: copingMats[state.coping], deck: deckMats[state.deck] || deckMats.stein });
+const matSet = () => { const c = copingMats[state.coping] || copingMats.stein, d = deckMats[state.deck] || deckMats.stein; ensure(c); ensure(d); return { ...mats, coping: c, deck: d }; };
 function buildExtrasNow() {
   if (extras) { stage.remove(extras.group); extras.dispose(); }
   extras = buildExtras(state, pool, mats, 'scene'); extras.group.visible = !before; stage.add(extras.group);
@@ -563,7 +565,13 @@ addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(resize, 1
 resize();
 new ResizeObserver(() => layout()).observe($('#cfg'));
 const timer = new THREE.Timer();
-let acc = 0, nF = 0, warm = 60, started = false, clock = 0;
+let acc = 0, nF = 0, warm = 60, started = false, assetsDone = false, clock = 0;
+{ // Preloader: Anteil in Prozent (nie rückwärts), am Ende kurz 100 %
+  let shown = 0; const bar = $('#ld-bar'), pct = $('#ld-pct');
+  const show = (p) => { shown = Math.max(shown, Math.min(1, p)); const v = Math.round(shown * 100); if (bar) bar.style.transform = `scaleX(${shown})`; if (pct) pct.textContent = `${v} %`; };
+  onProgress(show);
+  whenLoaded().then(() => { show(1); assetsDone = true; });
+}
 let intro = (params.has('nointro') || matchMedia('(prefers-reduced-motion: reduce)').matches) ? null : { t: 0 };
 // Handy im Leerlauf (keine Berührung, keine Fahrt): nur jedes zweite Bild zeichnen → kühler, akkuschonender
 let lastActive = 0, frameNo = 0;
@@ -573,11 +581,11 @@ renderer.setAnimationLoop(() => {
   if (!pool) return;
   timer.update(); const dt = Math.min(timer.getDelta(), 0.1); clock += dt;
   if (isMobile && !tween && !intro && !controls.autoRotate && performance.now() - lastActive > 900 && (frameNo++ & 1)) return;
-  if (tween) tweenStep(dt);
+  if (tween && (started || !intro)) tweenStep(dt);
   if (!photo.on) controls.update();
   if (Math.abs(vo.x - vo.tx) > 0.3 || Math.abs(vo.y - vo.ty) > 0.3) { const f = Math.min(1, dt * 9); vo.x += (vo.tx - vo.x) * f; vo.y += (vo.ty - vo.y) * f; applyVO(); wake(); }
   if (garden && !photo.on) { const l = garden.lot, p = camera.position; p.x = Math.max(-l.x + 1.5, Math.min(l.x - 1.5, p.x)); p.z = Math.max(l.back + 1.5, Math.min(l.front - 1.5, p.z)); p.y = Math.max(0.7, Math.min(45, p.y)); }
-  if (intro) {                                                    // Einstieg: Wasser läuft ein, Kamera fährt heran
+  if (intro && started) {                                         // Einstieg: Wasser läuft ein, Kamera fährt heran
     intro.t += dt; const k = Math.min(1, Math.max(0, (intro.t - 0.4) / 2.8)), e = 1 - (1 - k) ** 3, w = pool.group.getObjectByName('wasser');
     if (w) w.position.y = -(pool.dims.depth - 0.1) * (1 - e);
     if (k >= 1) { if (w) w.position.y = 0; intro = null; toast(isMobile ? 'Ziehen zum Drehen · zwei Finger zum Zoomen' : 'Ziehen zum Drehen · Scrollen zum Zoomen'); }
@@ -587,7 +595,7 @@ renderer.setAnimationLoop(() => {
   if (lampLevel > 0 && state.extras.light === 'wechsel') applyLightColor(clock);
   if (shadowDirty) { renderer.shadowMap.needsUpdate = true; shadowDirty = false; }
   post.render(dt);
-  if (!started) { started = true; $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); }
+  if (!started && assetsDone) { started = true; $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); setTimeout(() => { prefetch(); loadHDRI('evening'); loadHDRI('night'); }, 1500); }       // übrige Tageszeiten leise nachladen
   if (ar.building || params.has('fixed')) return;
   if (warm > 0) { warm--; return; }
   acc += dt; nF++;                                                // adaptive Auflösung: bei dauerhaft < ~30 fps schrittweise runter

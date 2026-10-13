@@ -15,7 +15,6 @@ Quelle: Poly Haven. Erneuern mit `npm run assets` (siehe `scripts/fetch-assets.m
 | --- | --- |
 | `public/textures/grass_*` | Leafy Grass |
 | `public/textures/decking_*` | Wooden Planks |
-| `public/textures/fence_*` | Weathered Planks |
 | `public/textures/sandstone_*` | Sandstone Blocks 08 |
 | `public/textures/granite_*` | Granite Tile |
 | `public/textures/concrete_*` | Brushed Concrete 03 |
@@ -23,8 +22,8 @@ Quelle: Poly Haven. Erneuern mit `npm run assets` (siehe `scripts/fetch-assets.m
 | `public/textures/linen_*` | Rough Linen |
 | `public/textures/bark_*` | Bark Brown 02 |
 | `public/textures/soil_*` | Farm Soil |
-| `public/models/potted_plant_04`, `potted_plant_02`, `celandine_01`, `grass_medium_02`, `fern_02` | gleichnamige Modelle |
-| `public/hdri/day.hdr` | Meadow 2 (2k) |
+| `public/models/potted_plant_04`, `potted_plant_02`, `celandine_01`, `grass_medium_02` | gleichnamige Modelle |
+| `public/hdri/day.hdr` | Meadow 2 (1k) |
 | `public/hdri/evening.hdr` | Grasslands Sunset (1k) |
 | `public/hdri/night.hdr` | Moonlit Golf (1k) |
 

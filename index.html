@@ -91,6 +91,9 @@
     #toast.show { opacity: 1; }
     #loading { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); font-size: 14px; color: var(--muted); transition: opacity .5s; z-index: 40; }
     #loading.done { opacity: 0; pointer-events: none; }
+    .ld { width: min(340px, 84vw); text-align: center; } .ld-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 14px; }
+    .ld-track { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; } .ld-track i { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left; transform: scaleX(0); transition: transform .25s ease-out; border-radius: 99px; }
+    .ld-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 9px; font-size: 12px; } #ld-pct { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); font-size: 14px; }
     #modal { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(6,12,16,.5); z-index: 20; padding: 16px; }
     #modal[hidden] { display: none; }
     #modal-body.card { position: static; padding: 20px; max-width: 420px; width: 100%; text-align: center; max-height: 90vh; max-height: 90dvh; overflow-y: auto; }
@@ -178,7 +181,7 @@
 
   <div id="toast" class="panel" role="status"></div>
   <div id="modal" hidden><div id="modal-body" class="panel card"></div></div>
-  <div id="loading">Pool wird erzeugt …</div>
+  <div id="loading" role="status" aria-live="polite"><div class="ld"><div class="ld-title">Ihr 3D-Konfigurator wird vorbereitet</div><div class="ld-track"><i id="ld-bar"></i></div><div class="ld-row"><span id="ld-pct">0 %</span><small>Texturen, Himmel und Modelle werden geladen</small></div><noscript>Bitte JavaScript aktivieren.</noscript></div></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

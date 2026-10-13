@@ -13,7 +13,7 @@ function sharedMats() {
   const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0, ...o });
   const flow = flowTexture(); flow.repeat.set(1, 1);
   const flowV = flowTexture(); flowV.repeat.set(1, 1);
-  const linen = (color, mpt = 0.5) => { const m = std({ ...pbr('linen', { metersPerTile: mpt }), color, roughness: 1 }); m.normalScale.set(1.4, 1.4); m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) * 1.75);'); }; return m; };
+  const linen = (color, mpt = 0.5) => { const m = std({ ...pbr('linen', { metersPerTile: mpt, rough: false }), color, roughness: 1 }); m.normalScale.set(1.4, 1.4); m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) * 1.75);'); }; return m; };
   shared = {
     flow, flowV,
     steel: std({ color: 0xdfe3e6, roughness: 0.22, metalness: 1 }),

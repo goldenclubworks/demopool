@@ -66,6 +66,9 @@ Ziehen = drehen · Scrollen / zwei Finger = zoomen · Doppeltippen/Doppelklick =
 - **Statistik-Muster** unter `/dashboard.html`; Einbettung und Marken-Datei siehe oben.
 - **Tests:** `npm test` (Geometrie aller Modelle, Preislogik, Katalog-Prüfung, Lead-Bewertung).
 
+## Preloader und Datenschutz
+Vor dem ersten Bild lädt ein Preloader mit Prozentanzeige alle nötigen Dateien (Boden, Terrasse, Himmel); erst dann erscheint die Szene, so gibt es keinen schwarzen Boden mehr. Pflanzen-Modelle, weitere Beläge und die übrigen Tageszeiten laden danach leise im Hintergrund (ca. 7 MB vorab statt vorher 32 MB). Der Konfigurator verwendet **nur eigene Dateien**: keine externen Server oder Schriften, keine Cookies, kein localStorage/sessionStorage/IndexedDB, kein Tracking (gemessen im Test). Das gilt auch für die Foto-Funktion (das Foto bleibt im Browser). Statistik und Anfragen werden nur gesendet, wenn eine Firma dafür Adressen hinterlegt. Hinweis: Wird auf Vercel „Web Analytics“ oder „Speed Insights“ eingeschaltet, ist das eine eigene Datenverarbeitung und gehört in die Datenschutzerklärung. Keine Rechtsberatung.
+
 ## Layout
 Breit (Desktop, Tablet quer): Bedienfeld links, Szene wird in den freien Bereich verschoben. Schmal oder hochkant (Handy, Tablet): kompaktes Sheet unten (max. 46 % der Höhe), Szene und Kamera rahmen nur den sichtbaren Bereich. Tippen auf die Szene klappt das Sheet ein; „Zusätzlich“ fährt die Kamera bei Gegenstromanlage und Überdachung auf die passende Seite.
 

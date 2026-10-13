@@ -89,22 +89,26 @@ export function createMaterials({ aniso = 8, isMobile = false } = {}) {
 
   /* ---------- Beckenrand und Terrasse: Foto-PBR ---------- */
   const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0, ...o });
-  const stone = (name, mpt, color, sat = 1, normalScale = 1) => { const m = std({ ...pbr(name, { metersPerTile: mpt, aniso }), color, roughness: 1, vertexColors: true }); m.normalScale.setScalar(normalScale); if (sat !== 1) desaturate(m, sat); return m; };
+  // Steinmaterialien laden ihre Texturen erst, wenn sie gebraucht werden (Standard sofort, übrige nach dem Start im Hintergrund)
+  const stone = (name, mpt, color, sat = 1, normalScale = 1, vertexColors = true) => {
+    const m = std({ color, roughness: 1, vertexColors }); m.normalScale.setScalar(normalScale); if (sat !== 1) desaturate(m, sat);
+    m.userData.load = () => { if (m.userData.loaded) return; m.userData.loaded = true; Object.assign(m, pbr(name, { metersPerTile: mpt, aniso })); m.needsUpdate = true; };
+    return m;
+  };
   const copingMats = {
     stein: stone('sandstone', 1.1, 0xfff3e2, 0.9),
     granit: stone('granite', 1.0, 0xe9edf2, 0.9),
     beton: stone('concrete', 0.9, 0xf0f0f0, 0.15),
   };
   const deckMats = {
-    holz: stone('decking', 1.0, 0xf2dcc2, 1, 1.2),
-    stein: stone('sandstone', 1.5, 0xd2cfc8, 0.7),
-    beton: stone('slabs', 1.4, 0xf6f6f6, 0.15),
+    holz: stone('decking', 1.0, 0xf2dcc2, 1, 1.2, false),
+    stein: stone('sandstone', 1.5, 0xd2cfc8, 0.7, 1, false),
+    beton: stone('slabs', 1.4, 0xf6f6f6, 0.15, 1, false),
   };
   deckMats.beton.color.setScalar(2.1); copingMats.beton.color.setScalar(1.7);
-  deckMats.holz.vertexColors = false; deckMats.stein.vertexColors = false; deckMats.beton.vertexColors = false;
 
   /* ---------- Rasen ---------- */
-  const grassSet = pbr('grass', { metersPerTile: 1.8, aniso });
+  const grassSet = pbr('grass', { metersPerTile: 1.8, aniso, rough: false });
   const ground = new THREE.MeshStandardMaterial({ map: grassSet.map, normalMap: grassSet.normalMap, color: new THREE.Color(0.62, 0.74, 0.48), roughness: 1, metalness: 0, transparent: true });
   ground.normalScale.set(0.8, 0.8);
   ground.onBeforeCompile = (sh) => {
@@ -136,5 +140,8 @@ export function createMaterials({ aniso = 8, isMobile = false } = {}) {
     trim: std({ color: 0xeef0f1, roughness: 0.45 }),
     steel: std({ color: 0xdfe3e6, roughness: 0.22, metalness: 1 }),
   };
-  return { mats, U, copingMats, deckMats, ground };
+  /** lädt die Texturen einer Steinoption (falls noch nicht geschehen) */
+  const ensure = (m) => { if (m && m.userData.load) m.userData.load(); };
+  const prefetch = () => { [...Object.values(copingMats), ...Object.values(deckMats)].forEach(ensure); };
+  return { mats, U, copingMats, deckMats, ground, ensure, prefetch };
 }

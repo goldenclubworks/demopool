@@ -15,11 +15,11 @@ async function download(url, file) {
 }
 const api = (id) => fetch(`https://api.polyhaven.com/files/${id}`).then((r) => r.json());
 
-/* Texturen (PBR: Farbe, Normal, Rauheit, 1k) – Name im Projekt : Poly-Haven-ID */
+/* Texturen (PBR: Farbe, Normal, Rauheit, 1k) – Name im Projekt : Poly-Haven-ID.
+   Hinweis: bark, soil, linen und concrete werden nach dem Download auf 512 px verkleinert, alle JPGs mit 72–80 % neu kodiert (kürzere Ladezeit). */
 const TEX = {
   grass: 'leafy_grass',
   decking: 'wooden_planks',
-  fence: 'weathered_planks',
   sandstone: 'sandstone_blocks_08',
   granite: 'granite_tile',
   concrete: 'brushed_concrete_03',
@@ -35,15 +35,15 @@ for (const [name, id] of Object.entries(TEX)) {
 }
 
 /* Kleine Pflanzen-Modelle (glTF + Texturen, 1k) */
-for (const id of ['potted_plant_04', 'potted_plant_02', 'celandine_01', 'grass_medium_02', 'fern_02']) {
+for (const id of ['potted_plant_04', 'potted_plant_02', 'celandine_01', 'grass_medium_02']) {
   const g = (await api(id)).gltf['1k'].gltf;
   const dir = path.join(root, 'models', id);
   await download(g.url, path.join(dir, `${id}.gltf`));
   for (const [rel, f] of Object.entries(g.include)) await download(f.url, path.join(dir, rel));
 }
 
-/* HDRI-Kulissen: Tag (2k), Abend und Nacht (1k) */
-const HDRI = [['meadow_2', '2k', 'day'], ['grasslands_sunset', '1k', 'evening'], ['moonlit_golf', '1k', 'night']];
+/* HDRI-Kulissen (1k reicht: die Kulisse wird weichgezeichnet): Tag, Abend, Nacht */
+const HDRI = [['meadow_2', '1k', 'day'], ['grasslands_sunset', '1k', 'evening'], ['moonlit_golf', '1k', 'night']];
 for (const [id, res, name] of HDRI) {
   const h = await api(id);
   await download(h.hdri[res].hdr.url, path.join(root, 'hdri', `${name}.hdr`));

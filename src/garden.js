@@ -10,11 +10,11 @@ let sh = null;
 function shared() {
   if (sh) return sh;
   const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, ...o });
-  const bark = std({ ...pbr('bark', { metersPerTile: 0.9 }), color: 0xd8cfc4 });
+  const bark = std({ ...pbr('bark', { metersPerTile: 0.9, rough: false }), color: 0xd8cfc4 });
   sh = {
     leaf: leafMaterial(leafCard('laub', 512, 5)), blossom: leafMaterial(leafCard('bluete', 512, 9), { wind: 0.7 }), lanzett: leafMaterial(leafCard('lanzett', 512, 3), { wind: 1.6 }),
     core: std({ color: 0x1b3319, roughness: 1 }), bark,
-    soil: std({ ...pbr('soil', { metersPerTile: 1 }), color: 0x9c8a78, roughness: 1 }),
+    soil: std({ ...pbr('soil', { metersPerTile: 1, rough: false }), color: 0x9c8a78, roughness: 1 }),
     fence: std({ ...pbr('decking', { metersPerTile: 1 }), color: 0xcdbba5 }),
     steel: std({ color: 0x2b2f33, roughness: 0.45, metalness: 0.85 }), stone: std({ color: 0xb9b4aa, roughness: 0.85 }),
     glow: new THREE.MeshStandardMaterial({ color: 0xfff1cf, emissive: 0xffd59a, emissiveIntensity: 0, roughness: 0.4 }),
