@@ -74,16 +74,17 @@
     .brk { width: 100%; border-collapse: collapse; font-size: 13px; } .brk td { padding: 5px 0; border-bottom: 1px solid var(--line); } .brk td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 10px; }
     .brk .tot td { font-weight: 700; font-size: 14.5px; border-bottom: 0; padding-top: 9px; }
     .row { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
-    #pricebar { border-top: 1px solid var(--line); padding: 10px 14px 12px; display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; align-items: center; }
-    #pricebar .pr { grid-column: 1; } #pricebar .pr small { display: block; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); } #price { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-    #b-break { border: 1px solid var(--line); border-radius: 12px; grid-column: 2; }
-    #breakdown { grid-column: 1 / -1; font-size: 12.5px; max-height: 150px; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; padding: 4px 10px; }
-    #breakdown div { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); } #breakdown div:last-child { border-bottom: 0; } #breakdown b { font-variant-numeric: tabular-nums; white-space: nowrap; }
-    #nav { grid-column: 1 / -1; display: flex; gap: 10px; } #nav button { flex: 1; min-height: 44px; } #nav .solid { flex: 2; }
+    #pricebar { position: relative; border-top: 1px solid var(--line); padding: 8px 12px 10px; display: flex; align-items: center; gap: 8px; }
+    #b-break { flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; justify-content: center; padding: 2px 8px; min-height: 46px; border-radius: 12px; text-align: left; }
+    #b-break small { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); } #price { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; }
+    #nav { display: flex; gap: 8px; } #nav button { min-height: 46px; padding: 8px 16px; }
+    #breakdown { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 6px); max-height: 40vh; max-height: 40dvh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.2); padding: 6px 12px; font-size: 12.5px; z-index: 4; }
+    #breakdown div { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); } #breakdown div:last-child { border-bottom: 0; } #breakdown b { font-variant-numeric: tabular-nums; white-space: nowrap; }
     #foot { padding: 0 16px 10px; font-size: 10.5px; color: var(--muted); }
     #actions { top: max(14px, env(safe-area-inset-top)); right: 14px; display: flex; gap: 8px; background: none; border: 0; box-shadow: none; }
     #actions button { border-radius: 14px; box-shadow: 0 6px 22px rgba(0,0,0,.18); min-height: 44px; padding: 8px 16px; }
     #actions button.ghost { background: var(--panel); }
+    #b-ar .sm { display: none; }
     #viewbar { top: 70px; right: 14px; display: flex; flex-direction: column; overflow: hidden; border-radius: 14px; }
     #viewbar button { min-height: 36px; font-size: 12.5px; justify-content: flex-start; padding: 6px 14px; } #viewbar button + button { border-top: 1px solid var(--line); }
     #toast { top: 70px; left: 50%; transform: translateX(-50%); padding: 10px 14px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 30; }
@@ -100,20 +101,27 @@
     .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: sp .8s linear infinite; flex: none; }
     @keyframes sp { to { transform: rotate(360deg); } }
 
-    @media (max-width: 760px) {
-      #cfg { top: auto; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: 62vh; max-height: 62dvh; }
-      #cfg.collapsed #body, #cfg.collapsed #stepper, #cfg.collapsed #nav, #cfg.collapsed #foot, #cfg.collapsed #breakdown { display: none; }
-      #b-panel { display: inline-flex; }
-      #head { padding: 10px 12px 6px; } #brand-name { font-size: 16px; }
-      #stepper { padding: 2px 8px 6px; } #stepper button { min-height: 44px; }
-      #body { padding: 2px 12px 8px; }
-      #pricebar { padding: 8px 12px 10px; } #price { font-size: 18px; }
-      #actions { top: max(10px, env(safe-area-inset-top)); right: 10px; } #actions button { min-height: 42px; padding: 6px 12px; }
-      #viewbar { top: 62px; left: 10px; right: 10px; flex-direction: row; overflow-x: auto; border-radius: 14px; scrollbar-width: none; } #viewbar::-webkit-scrollbar { display: none; }
-      #viewbar button { min-height: 40px; flex: 1 0 auto; justify-content: center; padding: 6px 12px; } #viewbar button + button { border-top: 0; border-left: 1px solid var(--line); }
-      .cards { gap: 8px; }
+    @media (max-width: 1100px) and (orientation: landscape) { #cfg { width: 320px; } }
+    @media (max-width: 760px), (orientation: portrait) and (max-width: 1100px) {
+      #cfg { top: auto; left: 8px; right: 8px; margin: 0 auto; max-width: 620px; bottom: max(8px, env(safe-area-inset-bottom)); width: auto; max-height: 46vh; max-height: 46dvh; }
+      #cfg.collapsed #body, #cfg.collapsed #stepper, #cfg.collapsed #foot { display: none; }
+      #b-panel { display: inline-flex; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+      #head { padding: 8px 8px 2px 14px; } #brand-eyebrow, #foot { display: none; } #brand-name { font-size: 15px; }
+      #stepper { padding: 0 6px 4px; border-bottom: 0; } #stepper button { min-height: 48px; }
+      #body { padding: 0 12px 6px; }
+      .step h2, .lead, .facts { display: none; }
+      .sec { margin-top: 10px; } .step > .sec:first-child { margin-top: 4px; } .lab { margin-bottom: 5px; }
+      .cards { display: flex; overflow-x: auto; gap: 8px; margin: 0 -12px; padding: 2px 12px 6px; scroll-snap-type: x proximity; scrollbar-width: none; } .cards::-webkit-scrollbar { display: none; }
+      .mc { flex: 0 0 128px; scroll-snap-align: start; } .mc svg { height: 38px; margin-bottom: 2px; }
+      .extras { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+      .ex { padding: 6px 8px; min-height: 48px; gap: 8px; } .ex i, .ex .p { display: none; } .ex b { font-size: 13px; }
+      #pricebar { padding: 6px 10px 8px; } #price { font-size: 18px; } #breakdown { left: 4px; right: 4px; }
+      #actions { top: max(8px, env(safe-area-inset-top)); right: 8px; } #actions #b-ask { display: none; } #actions button { min-height: 42px; padding: 6px 14px; }
+      #b-ar .lg { display: none; } #b-ar .sm { display: inline; }
+      #viewbar { top: max(8px, env(safe-area-inset-top)); left: 8px; right: 148px; flex-direction: row; overflow-x: auto; scrollbar-width: none; border-radius: 14px; } #viewbar::-webkit-scrollbar { display: none; }
+      #viewbar button { min-height: 42px; flex: 1 0 auto; justify-content: center; padding: 6px 12px; } #viewbar button + button { border-top: 0; border-left: 1px solid var(--line); }
+      #toast { top: 62px; }
     }
-    @media (max-width: 400px) { #actions { right: 6px; gap: 6px; } #actions button { font-size: 12px; padding: 6px 9px; white-space: nowrap; } #viewbar { right: 6px; left: 6px; } }
   </style>
 </head>
 <body>
@@ -128,15 +136,14 @@
     <nav id="stepper" aria-label="Schritte"></nav>
     <div id="body"></div>
     <div id="pricebar">
-      <div class="pr"><small>Beispielpreis</small><span id="price"></span></div>
-      <button id="b-break" aria-expanded="false" aria-controls="breakdown">Details</button>
-      <div id="breakdown" hidden></div>
+      <button class="pr" id="b-break" aria-expanded="false" aria-controls="breakdown"><small>Beispielpreis ▾</small><span id="price"></span></button>
       <div id="nav"><button class="ghost" id="b-prev">Zurück</button><button class="solid" id="b-next">Weiter</button></div>
+      <div id="breakdown" hidden></div>
     </div>
     <div id="foot">Unverbindliche Visualisierung – Maße, Preise und Ausführung laut Angebot.</div>
   </section>
 
-  <section id="actions" class="panel"><button class="ghost" id="b-ask">Anfrage senden</button><button class="solid" id="b-ar">Im Garten ansehen (AR)</button></section>
+  <section id="actions" class="panel"><button class="ghost" id="b-ask">Anfrage senden</button><button class="solid" id="b-ar"><span class="lg">Im Garten ansehen (AR)</span><span class="sm">Im Garten (AR)</span></button></section>
   <nav id="viewbar" class="panel" aria-label="Ansicht"><button data-v="orbit">Außen</button><button data-v="top">Von oben</button><button data-v="near">Nah</button><button data-v="spin" aria-pressed="false">Rundflug</button><button data-v="dims" aria-pressed="false">Maße</button><button data-v="before" aria-pressed="false">Vorher</button></nav>
 
   <div id="toast" class="panel" role="status"></div>

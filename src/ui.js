@@ -68,7 +68,7 @@ export function initUI(api) {
     $('#stepper').querySelectorAll('button').forEach((b) => { b.setAttribute('aria-current', String(+b.dataset.s === step)); b.classList.toggle('done', +b.dataset.s < step); });
     $('#b-prev').disabled = step === 1;
     $('#b-next').textContent = step === 4 ? 'Zusammenfassung' : step === 5 ? 'Anfragen' : 'Weiter';
-    body.scrollTop = 0;
+    body.scrollTop = 0; closeBreak();
     if (step === 5) fillSummary();
     if (!silent) api.onStep(step);
   }
@@ -90,9 +90,11 @@ export function initUI(api) {
   }
 
   /* ---------- Preisleiste ---------- */
-  const priceEl = $('#price'), breakEl = $('#breakdown');
-  $('#b-break').addEventListener('click', (e) => { const o = breakEl.hidden; breakEl.hidden = !o; e.currentTarget.setAttribute('aria-expanded', String(o)); });
-  if (!api.showPrices) $('#pricebar .pr').hidden = true;
+  const priceEl = $('#price'), breakEl = $('#breakdown'), bb = $('#b-break');
+  const closeBreak = () => { breakEl.hidden = true; bb.setAttribute('aria-expanded', 'false'); };
+  bb.addEventListener('click', () => { const o = breakEl.hidden; breakEl.hidden = !o; bb.setAttribute('aria-expanded', String(o)); });
+  document.addEventListener('pointerdown', (e) => { if (!breakEl.hidden && !e.target.closest('#pricebar')) closeBreak(); });
+  if (!api.showPrices) bb.hidden = true;
 
   function refresh() {
     const d = api.dims();

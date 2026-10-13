@@ -262,21 +262,32 @@ const tweenStep = (dt) => {
   camera.position.setFromSpherical(new THREE.Spherical(s0.radius * (s1.radius / s0.radius) ** e, s0.phi + (s1.phi - s0.phi) * e, s0.theta + tween.dTheta * e)).add(controls.target);
   if (k >= 1) endTween();
 };
-function effAspect() { const w = innerWidth, h = innerHeight, r = $('#cfg').getBoundingClientRect(); return w > 760 ? Math.max(0.4, (w - (r.right + 14)) / h) : w / Math.max(200, h - (r.height + 8)); }
-const fit = () => Math.max(1, 0.95 / effAspect());
+// Schmale/hochkant stehende Geräte: Bedienfeld als Sheet unten, sonst als Seitenleiste links
+const sheetMQ = matchMedia('(max-width: 760px), (orientation: portrait) and (max-width: 1100px)');
+const isSheet = () => sheetMQ.matches;
+const topUi = () => (isSheet() ? Math.max(0, $('#viewbar').getBoundingClientRect().bottom + 6) : 0);
+// Anteil des Bildes, der nicht vom Bedienfeld verdeckt wird. Der vertikale Sichtwinkel bezieht sich auf das GANZE Bild:
+// Breite also aus camera.aspect (Vollbild), der freie Anteil kommt separat dazu.
+function freeFrac() {
+  const w = innerWidth, h = innerHeight, r = $('#cfg').getBoundingClientRect();
+  return isSheet() ? { x: 1, y: Math.max(0.25, (h - (r.height + 8) - topUi()) / h) } : { x: Math.max(0.3, (w - (r.right + 14)) / w), y: 1 };
+}
+const needDist = (span) => span / (0.76 * camera.aspect * freeFrac().x);         // Abstand, bei dem 'span' Meter Breite in den freien Bereich passen (Sichtfeld 38°, schräger Blick)
 const views = {
-  orbit(ms = 900, k = 1) { const d = (Math.max(state.length, state.width * 1.6) * 0.95 + 4) * fit() * k * 1.2; goTo(new THREE.Vector3(d * 0.62, d * 0.46, d * 0.8), new THREE.Vector3(0, -0.2, 0), ms); },
+  orbit(ms = 900, k = 1, flip = 1) { const d = Math.max((Math.max(state.length, state.width * 1.6) * 0.95 + 4) * 1.2 * k, needDist(state.length + 4) * k); goTo(new THREE.Vector3(d * 0.62 * flip, d * 0.46, d * 0.8), new THREE.Vector3(0, -0.2, 0), ms); },
+  mid(ms = 900) { views.orbit(ms, 0.85); },
+  flip(ms = 900) { views.orbit(ms, 1, -1); },
   wide(ms = 900) { views.orbit(ms, 1.55); },
-  top() { const d = (Math.max(state.length * 1.15, state.width * 2.1) + 5) * Math.max(1, 0.75 / effAspect()); goTo(new THREE.Vector3(0.001, d, 0.6), new THREE.Vector3(0, 0, 0)); },
-  near() { goTo(new THREE.Vector3(state.length * 0.22, 1.5 * fit(), state.width / 2 + 4.2 * fit()), new THREE.Vector3(-state.length * 0.05, -0.3, 0)); },
+  top() { const f = freeFrac(), d = Math.max((Math.max(state.length * 1.15, state.width * 2.1) + 5), (state.length + 4) / (0.689 * camera.aspect * f.x), (state.width + 4) / (0.689 * f.y)); goTo(new THREE.Vector3(0.001, d, 0.6), new THREE.Vector3(0, 0, 0)); },
+  near() { const f = Math.max(1, 0.8 / (camera.aspect * freeFrac().x)); goTo(new THREE.Vector3(state.length * 0.22, 1.5 * f, state.width / 2 + 4.2 * f), new THREE.Vector3(-state.length * 0.05, -0.3, 0)); },
 };
-const STEP_VIEW = [null, 'orbit', 'near', 'wide', 'orbit', 'orbit'];
+const STEP_VIEW = [null, 'orbit', 'mid', 'wide', 'orbit', 'orbit'];
 // Das Bedienfeld verdeckt einen Teil des Bildes: Szene in den freien Bereich verschieben
 const vo = { x: 0, y: 0, tx: 0, ty: 0, init: false };
 function applyVO() { camera.setViewOffset(innerWidth, innerHeight, vo.x, vo.y, innerWidth, innerHeight); camera.updateProjectionMatrix(); }
 function layout(snap = false) {
-  const w = innerWidth, r = $('#cfg').getBoundingClientRect();
-  if (w > 760) { vo.tx = -(r.right + 14) / 2; vo.ty = 0; } else { vo.tx = 0; vo.ty = (r.height + 8) / 2 - 20; }
+  const r = $('#cfg').getBoundingClientRect();
+  if (!isSheet()) { vo.tx = -(r.right + 14) / 2; vo.ty = 0; } else { vo.tx = 0; vo.ty = (r.height + 8 - topUi()) / 2; }   // Szene in die Mitte des freien Bereichs
   if (snap || !vo.init) { vo.x = vo.tx; vo.y = vo.ty; vo.init = true; applyVO(); }
 }
 
@@ -376,13 +387,13 @@ const api = {
     state[key] = v;
     if (key === 'steps' || key === 'coping' || key === 'deck') rebuild();
     else if (key === 'liner') { setLinerColor(); applyLightColor(performance.now() / 1000); saveHash(); ui.refresh(); }
-    else if (key === 'cover') { pool.setCover(v); shadowDirty = true; invalidateAR(); saveHash(); ui.refresh(); }
+    else if (key === 'cover') { pool.setCover(v); shadowDirty = true; invalidateAR(); saveHash(); ui.refresh(); if (v === 'roof') views.wide(); }
     else if (key === 'time') { setTime(v); saveHash(); }
     else if (key === 'garden') { garden.group.visible = v; saveHash(); }
   },
   changeExtra(k, v) {
     state.extras[k] = v;
-    if (k === 'light') { applyLightColor(performance.now() / 1000); saveHash(); ui.refresh(); } else rebuildExtras();
+    if (k === 'light') { applyLightColor(performance.now() / 1000); saveHash(); ui.refresh(); } else { rebuildExtras(); if (v && k === 'jet') { controls.autoRotate = false; views.flip(); } }
   },
   changeSize(k, v) { state.model = 'frei'; state[k] = v; if (k === 'length' && state.width > v - 0.5) state.width = Math.max(2, v - 0.5); if (k === 'width' && v > state.length - 0.5) state.length = Math.min(16, v + 0.5); scheduleRebuild(); },
   price, dims: () => pool && pool.dims, summaryLines, snap, download, copyLink, ask, ar: openAR, layout,
@@ -403,7 +414,10 @@ canvas.addEventListener('pointercancel', lift);
 canvas.addEventListener('pointerup', (e) => {
   const was = live.size; live.delete(e.pointerId);
   if (e.pointerType === 'mouse' || was !== 1 || taps.moved) { if (was <= 1) taps.moved = false; return; }
-  const now = performance.now(); if (now - taps.last < 330) { views.orbit(); taps.last = 0; } else taps.last = now;
+  const now = performance.now();
+  if (now - taps.last < 330) { views.orbit(); taps.last = 0; return; }
+  taps.last = now;
+  if (isSheet() && !$('#cfg').classList.contains('collapsed')) $('#b-panel').click();     // Tippen auf die Szene: Menü einklappen, Ergebnis ansehen
 });
 canvas.addEventListener('dblclick', () => views.orbit());
 $('#b-ask').addEventListener('click', () => ask());
@@ -465,7 +479,7 @@ renderer.setAnimationLoop(() => {
 ui = initUI(api);
 setTime(state.time);
 rebuild();
-if (isMobile) { $('#cfg').classList.add('collapsed'); $('#b-panel').textContent = 'Konfigurieren ▴'; $('#b-panel').setAttribute('aria-expanded', 'false'); }
+if (isSheet()) { $('#cfg').classList.add('collapsed'); $('#b-panel').textContent = 'Konfigurieren ▴'; $('#b-panel').setAttribute('aria-expanded', 'false'); }
 layout();
 camera.position.set(9, 6, 11); controls.target.set(0, -0.2, 0); views.orbit(1);
 if (intro) { camera.position.set(-14, 12, 26); controls.target.set(0, -0.2, 0); views.orbit(3600); }

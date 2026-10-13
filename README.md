@@ -48,6 +48,9 @@ Debug: `?debug` (setzt `window.__app`), `?fixed` schaltet die adaptive Auflösun
 ## Bedienung (Maus und Touch)
 Ziehen = drehen · Scrollen / zwei Finger = zoomen · Doppeltippen/Doppelklick = Standardansicht. Verschieben (Pan) ist bewusst aus, damit man sich nicht verirrt. Kamerafahrten laufen als Bogen um den Pool; wer währenddessen zieht, übernimmt sofort.
 
+## Layout
+Breit (Desktop, Tablet quer): Bedienfeld links, Szene wird in den freien Bereich verschoben. Schmal oder hochkant (Handy, Tablet): kompaktes Sheet unten (max. 46 % der Höhe), Szene und Kamera rahmen nur den sichtbaren Bereich. Tippen auf die Szene klappt das Sheet ein; „Zusätzlich“ fährt die Kamera bei Gegenstromanlage und Überdachung auf die passende Seite.
+
 ## Performance
 Himmel als vorgebackene Cube-Map, auf Handys kleinere Schattenkarte, 2 statt 4 Poolleuchten, Auflösung max. 1,5×, im Leerlauf nur jedes zweite Bild, adaptive Auflösung und Sparmodus bei dauerhaft niedriger Bildrate, Garten wird nur bei geänderter Beckengröße neu gebaut.
 
