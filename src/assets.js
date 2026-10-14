@@ -18,9 +18,12 @@ export function whenLoaded(maxMs = 30000) {
 const texLoader = new THREE.TextureLoader(manager);
 const base = import.meta.env.BASE_URL;
 
-function tex(url, srgb, aniso, mpt) {
+/* Ersatz bei fehlender Datei (Netz weg, Datei blockiert): eine Farbfläche statt Schwarz, die App läuft weiter */
+const FALLBACK = { grass: '#4a6a2a', decking: '#9c7650', sandstone: '#cbb89a', granite: '#55595e', concrete: '#9a9a98', slabs: '#8c8c8a', linen: '#d8d2c4', bark: '#5b4636', soil: '#5a4333' };
+function solid(color) { const c = document.createElement('canvas'); c.width = c.height = 4; const x = c.getContext('2d'); x.fillStyle = color; x.fillRect(0, 0, 4, 4); return c; }
+function tex(url, srgb, aniso, mpt, name, kind) {
   // Jede Verwendung bekommt ein eigenes Texture-Objekt (eigene Wiederholung); das Bild kommt aus dem Browser-Cache.
-  const t = texLoader.load(base + url);
+  const t = texLoader.load(base + url, undefined, undefined, () => { t.image = solid(kind === 'nor' ? '#8080ff' : kind === 'rough' ? '#ffffff' : FALLBACK[name] || '#808080'); t.needsUpdate = true; });
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso; t.repeat.set(1 / mpt, 1 / mpt);
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   return t;
@@ -28,16 +31,27 @@ function tex(url, srgb, aniso, mpt) {
 
 /** PBR-Satz {map, normalMap, roughnessMap}; `metersPerTile` = Kantenlänge einer Kachel in Metern. */
 export function pbr(name, { metersPerTile = 1, aniso = 8, rough = true } = {}) {
-  const set = { map: tex(`textures/${name}_diff.jpg`, true, aniso, metersPerTile), normalMap: tex(`textures/${name}_nor.jpg`, false, aniso, metersPerTile) };
-  if (rough) set.roughnessMap = tex(`textures/${name}_rough.jpg`, false, aniso, metersPerTile);
+  const set = { map: tex(`textures/${name}_diff.jpg`, true, aniso, metersPerTile, name, 'diff'), normalMap: tex(`textures/${name}_nor.jpg`, false, aniso, metersPerTile, name, 'nor') };
+  if (rough) set.roughnessMap = tex(`textures/${name}_rough.jpg`, false, aniso, metersPerTile, name, 'rough');
   return set;
 }
 
 /* ---------- HDRI ---------- */
+/** Ersatzhimmel (Verlauf), falls die HDRI-Datei nicht kommt: Himmelblau → heller Horizont → Wiesengrün; Sonne ca. 40° hoch */
+function fallbackSky(name) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128; const x = c.getContext('2d'), night = name === 'night', eve = name === 'evening';
+  const g = x.createLinearGradient(0, 0, 0, 128);
+  const cols = night ? [[0, '#0a1020'], [0.5, '#1a2538'], [0.52, '#0d1510'], [1, '#080c08']] : eve ? [[0, '#4a6a9a'], [0.45, '#f0b48a'], [0.5, '#c88a6a'], [0.52, '#3a4a2a'], [1, '#222a18']] : [[0, '#4f86c6'], [0.45, '#b9d6ee'], [0.5, '#dfe9ee'], [0.52, '#5a7a3a'], [1, '#34471f']];
+  for (const [p, col] of cols) g.addColorStop(p, col); x.fillStyle = g; x.fillRect(0, 0, 256, 128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.mapping = THREE.EquirectangularReflectionMapping; t.needsUpdate = true;
+  const dir = new THREE.Vector3(0.6, night ? 0.5 : eve ? 0.12 : 0.65, 0.5).normalize();
+  return { texture: t, sun: { dir, color: new THREE.Color(night ? 0.7 : 1, night ? 0.8 : 0.93, night ? 1 : eve ? 0.75 : 0.85), peak: 1, horizon: new THREE.Color(night ? 0.01 : 0.55, night ? 0.015 : 0.62, night ? 0.03 : 0.66) }, fallback: true };
+}
 const hdriCache = new Map();
 export function loadHDRI(name) {
   if (!hdriCache.has(name)) {
-    hdriCache.set(name, new HDRLoader(manager).loadAsync(`${base}hdri/${name}.hdr`).then((t) => {
+    hdriCache.set(name, new HDRLoader(manager).loadAsync(`${base}hdri/${name}.hdr`).catch((e) => { console.warn('Himmel konnte nicht geladen werden, Ersatzhimmel:', e && e.message); return null; }).then((t) => {
+      if (!t) return fallbackSky(name);
       t.mapping = THREE.EquirectangularReflectionMapping;
       t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = true; t.needsUpdate = true;
       return { texture: t, sun: findSun(t) };

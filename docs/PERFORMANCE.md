@@ -33,7 +33,7 @@ Einfache Wandzeit-Messungen waren unbrauchbar (Shader-Compile, V-Sync); die Wert
 | MEDIUM (ohne AO) | 8 ms | 5,6 ms |
 
 ## Leistungsregler (src/main.js: `perfStep`, `calibrate`)
-1. **Start:** Wo der Browser GPU-Zeiten liefert (Chrome/Edge/Android), misst eine Kalibrierung hinter dem Preloader und wählt die Start-Auflösung (Ziel ≤ 13 ms GPU).
+1. **Start:** Wo der Browser GPU-Zeiten liefert (Chrome/Edge/Android), misst eine Kalibrierung hinter dem Preloader und wählt die Start-Auflösung (Ziel ≤ 15 ms GPU).
 2. **Laufend:** Median der Bildzeiten aus 30 aktiven Bildern (kein Leerlauf, kein Hintergrund-Tab; einzelne Ruckler zählen nicht). Über 18,7 ms: Auflösung eine Stufe tiefer (1 → 0,9 → 0,8 → 0,72 → 0,65 → 0,58 → 0,52). Danach Stufe „medium“ (AO aus), zuletzt Sparmodus.
 3. **Erholung:** Läuft es 7 s rund, wird die Auflösung wieder erhöht (nach einem Fehlversuch 45 s Pause); bei voller Auflösung wird „high“ wieder zugeschaltet.
 4. Pixel-Obergrenze 4,6 MP (5K-Displays, große Tablets).

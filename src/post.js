@@ -24,8 +24,8 @@ class GlowEffect extends Effect {
 const VERT = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 /** Glow: helle Bildanteile bei 1/4 Auflösung herausziehen (4 Abtastungen), zweimal getrennt weichzeichnen. Nur kleine Durchgänge. */
 class GlowPass extends Pass {
-  constructor(effect) {
-    super('GlowPass'); this.needsSwap = false; this.effect = effect;
+  constructor(effects) {
+    super('GlowPass'); this.needsSwap = false; this.effects = effects;
     const opts = { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
     this.a = new THREE.WebGLRenderTarget(2, 2, opts); this.b = new THREE.WebGLRenderTarget(2, 2, opts);
     const mat = (frag, u) => new THREE.ShaderMaterial({ uniforms: { tIn: { value: null }, texel: { value: new THREE.Vector2() }, ...u }, vertexShader: VERT, fragmentShader: frag, depthTest: false, depthWrite: false });
@@ -37,7 +37,7 @@ class GlowPass extends Pass {
     this.blur = mat(`uniform sampler2D tIn; uniform vec2 texel; uniform vec2 dir; varying vec2 vUv;
       void main() { vec3 s = texture2D(tIn, vUv).rgb * 0.227; vec2 d = dir * texel;
         s += (texture2D(tIn, vUv + d * 1.385).rgb + texture2D(tIn, vUv - d * 1.385).rgb) * 0.316; s += (texture2D(tIn, vUv + d * 3.231).rgb + texture2D(tIn, vUv - d * 3.231).rgb) * 0.070; gl_FragColor = vec4(s, 1.0); }`, { dir: { value: new THREE.Vector2() } });
-    this.effect.uniforms.get('tGlow').value = this.a.texture;
+    for (const e of this.effects) e.uniforms.get('tGlow').value = this.a.texture;
   }
   get threshold() { return this.down.uniforms.thr.value; } set threshold(v) { this.down.uniforms.thr.value = v; }
   setSize(w, h) { const sw = Math.max(2, w >> 2), sh = Math.max(2, h >> 2); this.a.setSize(sw, sh); this.b.setSize(sw, sh); this.down.uniforms.texel.value.set(1 / w, 1 / h); this.blur.uniforms.texel.value.set(1 / sw, 1 / sh); }
@@ -50,29 +50,34 @@ class GlowPass extends Pass {
 
 export function createPost(renderer, scene, camera, tier = 'high') {
   const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: 0 });
+  composer.autoRenderToScreen = false;         // wichtig: sonst gilt immer der zuletzt HINZUGEFÜGTE Durchgang als Ausgabe – ist der abgeschaltet, bliebe das Bild schwarz (Retina!)
   composer.addPass(new RenderPass(scene, camera));
   const size = renderer.getSize(new THREE.Vector2());
   const ao = new N8AOPostPass(scene, camera, size.x, size.y);
   ao.configuration.aoRadius = 0.45; ao.configuration.distanceFalloff = 0.9; ao.configuration.intensity = 2.4; ao.configuration.color = new THREE.Color(0x14181c);
   ao.configuration.gammaCorrection = false; ao.configuration.halfRes = true; ao.setQualityMode('Medium');
-  const glow = new GlowEffect(), glowPass = new GlowPass(glow); glowPass.threshold = 1.7;
-  composer.addPass(glowPass);         // vor AO: liest den frischen Szenen-Puffer (die umgekehrte Reihenfolge war 18 ms langsamer)
+  // Zwei vollständig getrennte Abschluss-Durchgänge (eigene Effekt-Objekte): geteilte Effekte ließen den Durchgang in der Safari-Engine schwarz rendern
+  const finals = [false, true].map((aa) => {
+    const glow = new GlowEffect(), exposure = new ExposureEffect(), grade = new HueSaturationEffect({ saturation: 0.06, hue: 0 });
+    const vignette = new VignetteEffect({ eskil: false, offset: 0.3, darkness: 0.42 }), tone = new ToneMappingEffect({ mode: ToneMappingMode.NEUTRAL });
+    const pass = new EffectPass(camera, glow, exposure, grade, vignette, tone, ...(aa ? [new FXAAEffect()] : []));
+    return { pass, glow, exposure };
+  });
+  const glowPass = new GlowPass(finals.map((f) => f.glow)); glowPass.threshold = 1.7;
+  composer.addPass(glowPass);         // vor AO: liest den frischen Szenen-Puffer
   composer.addPass(ao);
-  const exposure = new ExposureEffect(), grade = new HueSaturationEffect({ saturation: 0.06, hue: 0 });
-  const vignette = new VignetteEffect({ eskil: false, offset: 0.3, darkness: 0.42 }), tone = new ToneMappingEffect({ mode: ToneMappingMode.NEUTRAL });
-  const noAA = new EffectPass(camera, glow, exposure, grade, vignette, tone);
-  const withAA = new EffectPass(camera, glow, exposure, grade, vignette, tone, new FXAAEffect()); withAA.enabled = false;
+  const [noAA, withAA] = [finals[0].pass, finals[1].pass]; withAA.enabled = false; noAA.renderToScreen = true;
   composer.addPass(noAA); composer.addPass(withAA);
 
   const api = {
-    composer, ao, tier, parts: { glowPass, noAA, withAA, glow }, aa: false, glowOn: true,
+    composer, ao, tier, parts: { glowPass, noAA, withAA }, aa: false, glowOn: true,
     setTier(t) { api.tier = t; ao.enabled = t === 'high'; api.updateGlow(); },
     /** Glow nur, wenn es etwas zum Leuchten gibt (Abend/Nacht, Lampen); am Tag spart das einen Durchgang */
     setGlow(on) { api.glowOn = on; api.updateGlow(); },
-    updateGlow() { glowPass.enabled = api.glowOn && api.tier !== 'low'; glow.uniforms.get('uGlow').value = glowPass.enabled ? 0.45 : 0; },
+    updateGlow() { glowPass.enabled = api.glowOn && api.tier !== 'low'; for (const f of finals) f.glow.uniforms.get('uGlow').value = glowPass.enabled ? 0.45 : 0; },
     /** FXAA nur bei kleiner Pixeldichte nötig (bei Retina löst die Auflösung die Kanten) */
-    setAA(on) { api.aa = on; noAA.enabled = !on; withAA.enabled = on; },
-    setExposure(v) { exposure.exposure = v; },
+    setAA(on) { api.aa = on; noAA.enabled = !on; withAA.enabled = on; noAA.renderToScreen = !on; withAA.renderToScreen = on; },
+    setExposure(v) { for (const f of finals) f.exposure.exposure = v; },
     setSize(w, h) { composer.setSize(w, h, false); ao.setSize(w, h); },
     render(dt) { composer.render(dt); },
   };

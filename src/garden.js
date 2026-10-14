@@ -34,7 +34,7 @@ export function buildGarden(maxBounds, opts = {}) {
   const M = shared(), group = new THREE.Group(); group.name = 'garten';
   const fixed = new THREE.Group(), adaptive = new THREE.Group(); group.add(fixed, adaptive);
   const geos = []; let adaptiveGeos = [], alive = true;
-  const R = rng(5), dens = isMobile ? 0.5 : 1;
+  const R = rng(5), dens = opts.dens ?? (isMobile ? 0.5 : 1);
   const mk = (list, parent) => (geo, mat, pos, { cast = false, receive = true } = {}) => { const m = new THREE.Mesh(geo, mat); m.position.set(...pos); m.castShadow = cast; m.receiveShadow = receive; parent.add(m); list.push(geo); return m; };
   const put = mk(geos, fixed);
   const { hx, hz } = half(maxBounds);

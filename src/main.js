@@ -19,12 +19,20 @@ import { formHtml, readForm, scoreOf, inboxHtml, send as sendLead } from './lead
 
 const T0 = performance.now(), dbg = new URLSearchParams(location.search).has('debug'), tick = (l) => { if (dbg) console.info('[perf]', l, Math.round(performance.now() - T0), 'ms'); };
 const $ = (s) => document.querySelector(s);
+/* Lader: Anteil = Dateien (82 %) + Startschritte (18 %), nie rückwärts; Statuszeile nennt den aktuellen Schritt. Lange Rechenphasen geben dem Browser Zeit zum Zeichnen (wichtig auf Handys). */
+const ld = (() => {
+  let shown = 0, stage = 0, files = 0; const bar = $('#ld-bar'), pct = $('#ld-pct'), st = $('#ld-status');
+  const render = (force) => { shown = Math.max(shown, force ? 1 : Math.min(0.99, 0.82 * files + 0.18 * stage)); if (bar) bar.style.transform = `scaleX(${shown})`; if (pct) pct.textContent = `${Math.round(shown * 100)} %`; };
+  return { files(f) { files = f; render(); }, stage(label, part) { if (part > stage) stage = part; if (label && st) st.textContent = label; render(); }, done() { render(true); } };
+})();
+const paint = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 const canvas = $('#c');
 const params = new URLSearchParams(location.search);
 const ua = navigator.userAgent;
 const isTouchPhone = /iPhone|iPad|iPod|Android/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const isMobile = params.has('mobile') || matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
 const showPrices = params.get('preise') !== '0';
+const safe = params.has('safe');                                   // Sicherheitsmodus: weniger Grafik (automatisch nach einem Grafikabbruch oder per ?safe=1)
 const embed = params.has('embed');
 if (embed) document.documentElement.classList.add('embed');
 
@@ -93,12 +101,16 @@ const saveHash = () => { clearTimeout(hashT); hashT = setTimeout(writeHash, 250)
 const writeHash = () => { try { history.replaceState(null, '', '#cfg=' + btoa(unescape(encodeURIComponent(JSON.stringify(state)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')); } catch { /* egal */ } };
 
 /* ---------- Renderer / Szene ---------- */
-const tier0 = ['high', 'medium', 'low'].includes(params.get('q')) ? params.get('q') : 'high';          // immer die höchste Stufe; reicht die Leistung nicht, sinkt zuerst nur die Auflösung (siehe Leistungsregler)
+const tier0 = ['high', 'medium', 'low'].includes(params.get('q')) ? params.get('q') : safe ? 'medium' : 'high';          // immer die höchste Stufe; reicht die Leistung nicht, sinkt zuerst nur die Auflösung (siehe Leistungsregler)
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, powerPreference: 'high-performance' }); }
 catch (e) { $('#loading').innerHTML = 'Die 3D-Ansicht wird von diesem Gerät oder Browser nicht unterstützt.<br>Bitte einen aktuellen Browser (Safari, Chrome, Firefox, Edge) verwenden.'; throw e; }
-canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); toast('Die Grafik wurde unterbrochen – Seite wird neu geladen …'); setTimeout(() => location.reload(), 1200); });
-const NATIVE = Math.max(1, Math.min(devicePixelRatio, 3, Math.sqrt(4.6e6 / (innerWidth * innerHeight))));   // volle Pixeldichte, begrenzt auf ca. 4,6 Megapixel (5K-Displays, große Tablets)
+canvas.addEventListener('webglcontextlost', (e) => {                // z. B. Speichermangel auf dem Handy: einmal im Sicherheitsmodus neu starten (keine Schleife)
+  e.preventDefault();
+  if (!safe) { const u = new URL(location.href); u.searchParams.set('safe', '1'); toast('Die Grafik wurde unterbrochen – Sicherheitsmodus wird geladen …'); setTimeout(() => location.replace(u), 1200); }
+  else toast('Die Grafik wurde unterbrochen – bitte Seite neu laden');
+});
+const NATIVE = Math.max(1, Math.min(devicePixelRatio, safe ? 1.25 : isMobile ? 2 : 3, Math.sqrt((safe ? 1.2e6 : isMobile ? 2.4e6 : 4.6e6) / (innerWidth * innerHeight))));   // volle Pixeldichte; Handys/Tablets max. 2× und 2,4 MP (Speicher), Desktop 4,6 MP
 const SCALES = [1, 0.9, 0.8, 0.72, 0.65, 0.58, 0.52];                                                      // Stufen der dynamischen Auflösung
 const perf = { tierUpAt: 0, scale: [...SCALES].reverse().find((v) => v >= (+params.get('scale') || 1) - 1e-6) || 1, good: 0, last: 0, noUpUntil: 0, raisedAt: 0 };
 let dpr = NATIVE * perf.scale;
@@ -118,7 +130,7 @@ let shadowDirty = true;
 /* Himmel (Foto-HDRI als Kulisse und Beleuchtung), Sonne */
 const pmrem = new THREE.PMREMGenerator(renderer);
 const sun = new THREE.DirectionalLight(0xffeedd, 3); sun.castShadow = true; scene.add(sun, sun.target);
-sun.shadow.intensity = 0.9; sun.shadow.mapSize.set(isMobile ? 2048 : 4096, isMobile ? 2048 : 4096); sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
+sun.shadow.intensity = 0.9; sun.shadow.mapSize.set(safe ? 1024 : isMobile ? 2048 : 4096, safe ? 1024 : isMobile ? 2048 : 4096); sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
 // az: gewünschte Himmelsrichtung der Sonne (Grad, in der x-z-Ebene), damit Wasser und Becken von der Kamerarichtung aus schön beleuchtet sind
 const TIME = {
   day: { hdri: 'day', fog: 0.0062, grass: 0.8, az: 205, exp: 0.95, env: 0.95, sun: 2.5, bg: 1, lamp: 0, caus: 1, light: 1 },
@@ -130,6 +142,7 @@ const envRT = {};
 async function setTime(key) {
   const t = TIME[key], token = ++envToken, h = await loadHDRI(t.hdri);
   if (token !== envToken) return;
+  if (!started) await paint();
   const rot = Math.atan2(h.sun.dir.z, h.sun.dir.x) - THREE.MathUtils.degToRad(t.az);          // Drehung der Kulisse um y, damit die Sonne bei az steht
   const dir = h.sun.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
   sun.position.copy(dir).multiplyScalar(60);
@@ -157,7 +170,7 @@ async function setTime(key) {
 const aniso = Math.min(isMobile ? 4 : 16, renderer.capabilities.getMaxAnisotropy());
 tick('renderer+post');
 const { mats, U, copingMats, deckMats, ground: groundMat, ensure, prefetch } = createMaterials({ aniso, isMobile });
-tick('materials+texturen');
+tick('materials+texturen'); ld.stage('Szene wird aufgebaut …', 0.2); await paint();
 const loaded = new Promise((res) => setTimeout(() => whenLoaded().then(res), 0));      // alle bis hierher angeforderten Dateien
 setModelGate(loaded);
 function applyLiner() {
@@ -174,12 +187,12 @@ const patch = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); patch.name 
 
 /* ---------- Pool, Zubehör, Garten ---------- */
 let pool = null, extras = null, garden = null, before = false;
-const probe = createProbe(renderer, scene); let probeT = 0, probeOn = false;
+const probe = createProbe(renderer, scene, isMobile || safe ? 128 : 256); let probeT = 0, probeOn = false;
 /** Wasserspiegelung der Umgebung neu aufnehmen – erst, wenn 0,7 s nichts geändert wurde (kein Ruckeln bei der Bedienung) */
 function scheduleProbe() {
   clearTimeout(probeT);
   probeT = setTimeout(() => {
-    if (!pool || photo.on || lite || post.tier === 'low') return;
+    if (!pool || photo.on || lite || safe || post.tier === 'low') return;
     const w = pool.group.getObjectByName('wasser'); mats.water.envMap = probe.update([w, occluder, shadowCatcher].filter(Boolean));
     if (!probeOn) { probeOn = true; mats.water.needsUpdate = true; }
   }, 700);
@@ -216,7 +229,7 @@ function rebuild() {
   patch.geometry.dispose(); patch.geometry = patchGeometry(pool.contour);
   if (!garden) {                                                  // Hecke, Bäume, Beete: einmal für die größte Terrasse gebaut – Modellwechsel baut sie nicht neu
     const free = state.model === 'frei' || params.has('frei'), L = Math.max(free ? 16 : 0, state.length, ...MODELS.map((m) => m.length)), W = Math.max(free ? 6.5 : 0, state.width, ...MODELS.map((m) => m.width));
-    garden = buildGarden({ minX: -L / 2, maxX: L / 2, minZ: -W / 2, maxZ: W / 2 }, { isMobile }); stage.add(garden.group);
+    garden = buildGarden({ minX: -L / 2, maxX: L / 2, minZ: -W / 2, maxZ: W / 2 }, { isMobile, noLawn: safe, dens: safe ? 0.3 : undefined }); stage.add(garden.group);
   }
   garden.fit(pool.bounds);
   garden.group.visible = state.garden;
@@ -598,7 +611,7 @@ async function calibrate() {
   try {
     const gl = renderer.getContext(); if (!gl.getExtension('EXT_disjoint_timer_query_webgl2')) return;
     let ms = await bench(10), tries = 0;
-    while (ms > 13.5 && tries++ < 3 && perf.scale > SCALES[SCALES.length - 1]) { const want = Math.sqrt(13 / ms) * perf.scale; setScale(SCALES.find((v) => v <= want + 1e-6) || SCALES[SCALES.length - 1]); ms = await bench(8); }
+    while (ms > 15.5 && tries++ < 3 && perf.scale > SCALES[SCALES.length - 1]) { const want = Math.sqrt(14.5 / ms) * perf.scale; setScale(SCALES.find((v) => v <= want + 1e-6) || SCALES[SCALES.length - 1]); ms = await bench(8); }
     tick('kalibriert: ' + ms.toFixed(1) + ' ms GPU bei ' + Math.round(perf.scale * 100) + ' % Auflösung');
   } catch { /* egal */ }
 }
@@ -615,11 +628,9 @@ resize();
 new ResizeObserver(() => layout()).observe($('#cfg'));
 const timer = new THREE.Timer();
 const samples = []; let warm = 60, started = false, assetsDone = false, clock = 0, sceneReady = null;
-{ // Preloader: Anteil in Prozent (nie rückwärts), am Ende kurz 100 %
-  let shown = 0; const bar = $('#ld-bar'), pct = $('#ld-pct');
-  const show = (p) => { shown = Math.max(shown, Math.min(1, p)); const v = Math.round(shown * 100); if (bar) bar.style.transform = `scaleX(${shown})`; if (pct) pct.textContent = `${v} %`; };
-  onProgress(show);
-  Promise.all([whenLoaded(), new Promise((r) => { sceneReady = r; })]).then(async () => { show(1); await calibrate(); assetsDone = true; });
+{ // Preloader: sobald alle Dateien da sind und die Szene steht, kalibrieren und enthüllen; spätestens nach 20 s wird enthüllt (Dateien, die nicht kommen, blockieren nicht)
+  onProgress(ld.files);
+  Promise.all([whenLoaded(18000), new Promise((r) => { sceneReady = r; })]).then(async () => { ld.stage('Letzte Schritte …', 0.9); await paint(); await calibrate(); assetsDone = true; });
 }
 let intro = (params.has('nointro') || matchMedia('(prefers-reduced-motion: reduce)').matches) ? null : { t: 0 };
 // Handy im Leerlauf (keine Berührung, keine Fahrt): nur jedes zweite Bild zeichnen → kühler, akkuschonender
@@ -646,7 +657,7 @@ renderer.setAnimationLoop(() => {
   if (lampLevel > 0 && state.extras.light === 'wechsel') applyLightColor(clock);
   if (shadowDirty) { renderer.shadowMap.needsUpdate = true; shadowDirty = false; }
   post.render(dt);
-  if (!started && assetsDone) { started = true; tick('erstes Bild nach Preloader'); $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); setTimeout(() => { prefetch(); loadHDRI('evening'); loadHDRI('night'); }, 1500); }       // übrige Tageszeiten leise nachladen
+  if (!started && assetsDone) { started = true; window.__started = true; ld.done(); tick('erstes Bild nach Preloader'); $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); setTimeout(() => { prefetch(); loadHDRI('evening'); loadHDRI('night'); }, 1500); }       // übrige Tageszeiten leise nachladen
   if (ar.building || params.has('fixed')) return;
   if (warm > 0) { warm--; return; }
   if (idle || document.hidden) { samples.length = 0; return; }       // Leerlauf (30 fps) und Hintergrund-Tab sagen nichts über die Leistung
@@ -657,8 +668,8 @@ renderer.setAnimationLoop(() => {
 tick('vor ui');
 ui = initUI(api);
 track('start', { w: innerWidth, mobile: isMobile });
-rebuild(); tick('pool+garten+zubehoer');
-await setTime(state.time); tick('himmel'); sceneReady && sceneReady();
+await paint(); rebuild(); tick('pool+garten+zubehoer'); ld.stage('Himmel wird berechnet …', 0.55); await paint();
+await setTime(state.time); tick('himmel'); ld.stage('Letzte Schritte …', 0.8); sceneReady && sceneReady();
 if (isSheet()) { $('#cfg').classList.add('collapsed'); $('#b-panel').textContent = 'Konfigurieren ▴'; $('#b-panel').setAttribute('aria-expanded', 'false'); }
 layout();
 camera.position.set(9, 6, 11); controls.target.set(0, -0.2, 0); views.orbit(1);

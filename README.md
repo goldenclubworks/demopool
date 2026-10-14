@@ -66,6 +66,13 @@ Ziehen = drehen · Scrollen / zwei Finger = zoomen · Doppeltippen/Doppelklick =
 - **Statistik-Muster** unter `/dashboard.html`; Einbettung und Marken-Datei siehe oben.
 - **Tests:** `npm test` (Geometrie aller Modelle, Preislogik, Katalog-Prüfung, Lead-Bewertung).
 
+## Robuster Start (auch auf dem Handy)
+- Der Lader zeigt Prozent **und** den aktuellen Schritt („Szene wird aufgebaut …“, „Himmel wird berechnet …“) und gibt dem Browser zwischen den Rechenphasen Zeit zum Zeichnen.
+- **Wächter:** Bei einem Fehler oder wenn der Start länger als 25 s dauert, erscheint eine Meldung mit „Neu laden“ und „Sicherheitsmodus“ (`?safe=1`: weniger Pixel, Schatten, Laub; kein Rasen/Spiegelung).
+- **Ersatz statt Hänger:** Fehlt der Himmel oder eine Textur (Netz weg), nutzt die App einen Ersatzhimmel bzw. Farbflächen, statt zu hängen oder schwarz zu bleiben.
+- **Grafikabbruch** (Speichermangel, v. a. iOS): einmaliger Neustart im Sicherheitsmodus, keine Neulade-Schleife. Handys/Tablets rendern höchstens mit 2× Pixeldichte und 2,4 MP.
+- **Prüfung:** `npm run check:render` prüft in Chrome (optional Safari-Engine/Firefox) bei 1×/2×/3× Pixeldichte und drei Größen, dass das Bild nicht leer ist.
+
 ## Preloader und Datenschutz
 Vor dem ersten Bild lädt ein Preloader mit Prozentanzeige alle nötigen Dateien (Boden, Terrasse, Himmel); erst dann erscheint die Szene, so gibt es keinen schwarzen Boden mehr. Pflanzen-Modelle, weitere Beläge und die übrigen Tageszeiten laden danach leise im Hintergrund (ca. 7 MB vorab statt vorher 32 MB). Der Konfigurator verwendet **nur eigene Dateien**: keine externen Server oder Schriften, keine Cookies, kein localStorage/sessionStorage/IndexedDB, kein Tracking (gemessen im Test). Das gilt auch für die Foto-Funktion (das Foto bleibt im Browser). Statistik und Anfragen werden nur gesendet, wenn eine Firma dafür Adressen hinterlegt. Hinweis: Wird auf Vercel „Web Analytics“ oder „Speed Insights“ eingeschaltet, ist das eine eigene Datenverarbeitung und gehört in die Datenschutzerklärung. Keine Rechtsberatung.
 

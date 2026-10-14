@@ -2,8 +2,8 @@
 // einmalig nach Änderungen (nie während der Bedienung), als Umgebungskarte nur für das Wasser. Kostet im Betrieb nichts.
 import * as THREE from 'three';
 
-export function createProbe(renderer, scene) {
-  const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+export function createProbe(renderer, scene, size = 256) {
+  const rt = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
   const cam = new THREE.CubeCamera(0.3, 500, rt); cam.position.set(0, 0.5, 0);
   const pmrem = new THREE.PMREMGenerator(renderer); let env = null;
   return {
