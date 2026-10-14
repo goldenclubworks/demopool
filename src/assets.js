@@ -84,11 +84,10 @@ function findSun(t) {
 }
 
 /* ---------- glTF ---------- */
-/* Pflanzen-Modelle sind nicht kritisch: sie laden erst nach dem Preloader (eigener Loader, ohne Fortschrittsanzeige) und erscheinen dann */
-let gate = Promise.resolve();
-export const setModelGate = (p) => { gate = p; };
+/* Pflanzen-Modelle laufen über denselben Manager: der Preloader wartet auf sie, nichts erscheint später „nachgeladen“. Fehlt ein Modell, wird es übersprungen. */
 const gltfCache = new Map();
 export function loadModel(id) {
-  if (!gltfCache.has(id)) gltfCache.set(id, gate.then(() => new GLTFLoader().loadAsync(`${base}models/${id}/${id}.gltf`)).then((g) => g.scene));
+  if (!gltfCache.has(id)) gltfCache.set(id, new GLTFLoader(manager).loadAsync(`${base}models/${id}/${id}.gltf`).then((g) => g.scene).catch((e) => { console.warn('Modell fehlt:', id, e && e.message); return new THREE.Group(); }));
   return gltfCache.get(id);
 }
+export const modelsReady = () => Promise.all([...gltfCache.values()]);

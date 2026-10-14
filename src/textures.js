@@ -177,7 +177,11 @@ export function leafCard(kind = 'laub', size = 512, seed = 5) {
       x.fillStyle = '#f5d24a'; x.beginPath(); x.arc(px, py, pr * 0.42, 0, 7); x.fill();
     }
   }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.generateMipmaps = true; t.needsUpdate = true;
+  // Farbe unter (fast) durchsichtigen Pixeln auf Blattgrün setzen: sonst mischen Mipmaps und Filter Schwarz in die Blattränder (dunkle „Fäden“ vor dem Himmel)
+  const img = x.getImageData(0, 0, size, size), d = img.data, fill = kind === 'bluete' ? [120, 150, 90] : [70, 105, 50];
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] < 24) { d[i] = fill[0]; d[i + 1] = fill[1]; d[i + 2] = fill[2]; }
+  const t = new THREE.DataTexture(new Uint8Array(d.buffer.slice(0)), size, size, THREE.RGBAFormat); t.flipY = true; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = true; t.needsUpdate = true;
   return t;
 }
 

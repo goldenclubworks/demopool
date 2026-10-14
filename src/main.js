@@ -7,7 +7,7 @@ import { USDZExporter } from 'three/addons/exporters/USDZExporter.js';
 import { createMaterials } from './materials.js';
 import { createPost } from './post.js';
 import { createProbe } from './probe.js';
-import { loadHDRI, onProgress, whenLoaded, setModelGate } from './assets.js';
+import { loadHDRI, onProgress, whenLoaded, modelsReady } from './assets.js';
 import { buildPool, groundGeometry, patchGeometry } from './pool.js';
 import { buildExtras } from './extras.js';
 import { buildGarden } from './garden.js';
@@ -138,7 +138,7 @@ const TIME = {
   night: { hdri: 'night', fog: 0.007, grass: 0.8, az: 150, exp: 1.15, env: 0.55, sun: 0.55, sunCol: 0x9db4ff, bg: 1, lamp: 1, caus: 0.25, light: 0.07 },
 };
 let skybox = null, envToken = 0;
-const envRT = {};
+const envRT = {}, skyCache = {};
 async function setTime(key) {
   const t = TIME[key], token = ++envToken, h = await loadHDRI(t.hdri);
   if (token !== envToken) return;
@@ -149,19 +149,24 @@ async function setTime(key) {
   sun.intensity = t.sun; sun.color.copy(t.sunCol ? tmpC.set(t.sunCol) : h.sun.color).lerp(new THREE.Color(1, 1, 1), t === TIME.day ? 0.25 : 0);
   if (!envRT[key]) envRT[key] = pmrem.fromEquirectangular(h.texture);
   scene.environment = envRT[key].texture; scene.environmentIntensity = t.env; scene.environmentRotation.set(0, rot, 0);
-  if (skybox) { scene.remove(skybox); skybox.geometry.dispose(); skybox.material.dispose(); }
+  if (skybox) scene.remove(skybox);
+  if (skyCache[key]) { skybox = skyCache[key]; skybox.rotation.y = -rot; scene.add(skybox); } else {
   skybox = new GroundedSkybox(h.texture, 3, 320);
   skybox.material.onBeforeCompile = (sh) => {
     // weich (Mip-Bias) und der Boden der Kulisse wird zur Rasenfarbe gezogen, damit der Übergang vom Rasen nahtlos ist
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vLY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLY = position.y;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLY;')
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vLY; varying float vEl;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLY = position.y; vEl = normalize(position).y;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLY; varying float vEl; uniform vec3 uHaze;')
       .replace('#include <map_fragment>', `vec4 sampledDiffuseColor = texture2D( map, vMapUv, 1.5 ); diffuseColor *= sampledDiffuseColor;
       float gm = smoothstep(0.0, -1.5, vLY); float gl = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
-      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.42, 0.18) * gl * ${t.grass.toFixed(2)}, gm);`);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.42, 0.18) * gl * ${t.grass.toFixed(2)}, gm);
+      // Dunst am Horizont: der dunkle Baumsaum des Panoramas geht weich in Horizontfarbe über (kein schwarzes Band)
+      diffuseColor.rgb = mix(diffuseColor.rgb, uHaze, 0.62 * (1.0 - smoothstep(0.0, 0.1, abs(vEl))));`);
+    sh.uniforms.uHaze = { value: h.sun.horizon.clone().multiplyScalar(t.bg * 0.8) };
   };
-  skybox.material.fog = false; skybox.material.color.setScalar(t.bg); skybox.material.depthWrite = false; skybox.renderOrder = 1000; skybox.frustumCulled = false; skybox.rotation.y = -rot; skybox.position.y = 3 - 2.7; scene.add(skybox);
+  skybox.material.fog = false; skybox.material.color.setScalar(t.bg); skybox.material.depthWrite = false; skybox.renderOrder = 1000; skybox.frustumCulled = false; skybox.rotation.y = -rot; skybox.position.y = 3 - 2.7; scene.add(skybox); skyCache[key] = skybox; }
   scene.fog = new THREE.FogExp2(h.sun.horizon.clone().multiplyScalar(t.bg * 0.92), t.fog); post.setExposure(t.exp); U.uCaus.value = t.caus; U.uLight.value = t.light; U.uSunCol.value.copy(sun.color);
-  setLamps(t.lamp); post.setGlow(t.lamp > 0 || params.has('glow')); scheduleProbe();
+  setLamps(t.lamp); post.setGlow(t.lamp > 0 || params.has('glow'));
+  if (probeCache[key]) { mats.water.envMap = probeCache[key]; }          // Spiegelung je Tageszeit vorberechnet: Umschalten kostet nichts
   shadowDirty = true;
   if (window.__app) window.__app.sunDir = dir;
 }
@@ -170,9 +175,8 @@ async function setTime(key) {
 const aniso = Math.min(isMobile ? 4 : 16, renderer.capabilities.getMaxAnisotropy());
 tick('renderer+post');
 const { mats, U, copingMats, deckMats, ground: groundMat, ensure, prefetch } = createMaterials({ aniso, isMobile });
-tick('materials+texturen'); ld.stage('Szene wird aufgebaut …', 0.2); await paint();
-const loaded = new Promise((res) => setTimeout(() => whenLoaded().then(res), 0));      // alle bis hierher angeforderten Dateien
-setModelGate(loaded);
+tick('materials+texturen'); ld.stage("Szene wird aufgebaut …", 0.2); await paint();
+prefetch();                                   // alle Belag-Texturen gleich mit laden (Preloader), damit ein Wechsel später sofort sitzt
 function applyLiner() {
   const h = LINERS[state.liner].hex;
   mats.liner.color.setHex(h); mats.waterAR.color.setHex(h);
@@ -187,7 +191,7 @@ const patch = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); patch.name 
 
 /* ---------- Pool, Zubehör, Garten ---------- */
 let pool = null, extras = null, garden = null, before = false;
-const probe = createProbe(renderer, scene, isMobile || safe ? 128 : 256); let probeT = 0, probeOn = false;
+const probe = createProbe(renderer, scene, isMobile || safe ? 128 : 256); let probeT = 0, probeOn = false; const probeCache = {};
 /** Wasserspiegelung der Umgebung neu aufnehmen – erst, wenn 0,7 s nichts geändert wurde (kein Ruckeln bei der Bedienung) */
 function scheduleProbe() {
   clearTimeout(probeT);
@@ -219,6 +223,14 @@ function buildExtrasNow() {
   extras = buildExtras(state, pool, mats, 'scene'); extras.group.visible = !before; stage.add(extras.group);
 }
 function rebuildExtras() { buildExtrasNow(); scheduleProbe(); shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh(); }
+/** Rand/Terrasse umstellen, ohne die Geometrie neu zu bauen (nur Material); false = Umbau nötig (z. B. von/zu „Rasen“) */
+function swapStone() {
+  const rand = pool.group.getObjectByName('rand'), terr = pool.group.getObjectByName('terrasse');
+  const c = copingMats[state.coping] || copingMats.stein, d = deckMats[state.deck];
+  if ((state.deck === 'gras') !== !terr || !rand) return false;
+  ensure(c); rand.material = c; if (terr) { ensure(d); terr.material = d; }
+  shadowDirty = true; return true;
+}
 function rebuild() {
   if (pool) { stage.remove(pool.group); pool.dispose(); }
   pool = buildPool(state, matSet(), 'scene');
@@ -239,7 +251,7 @@ function rebuild() {
   setLamps(lampLevel);
   const ext = Math.max(pool.dims.length, pool.dims.width) / 2 + 9, sc = sun.shadow.camera;
   sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = 200; sc.updateProjectionMatrix();
-  shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh(); scheduleProbe();
+  shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh(); scheduleProbe(); warm = Math.max(warm, 40);
 }
 let pending = false;
 const scheduleRebuild = () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; rebuild(); }); };
@@ -538,7 +550,9 @@ const api = {
     if (typeof v !== 'object') track('option', { key, value: String(v) });
     if (key === 'model') { applyModel(v); rebuild(); views.orbit(); return; }
     state[key] = v;
-    if (key === 'steps' || key === 'coping' || key === 'deck') rebuild();
+    if (key === 'coping') { swapStone(); saveHash(); invalidateAR(); ui.refresh(); }
+    else if (key === 'deck' && swapStone()) { saveHash(); invalidateAR(); ui.refresh(); }
+    else if (key === 'steps' || key === 'deck') rebuild();
     else if (key === 'liner') { setLinerColor(); applyLightColor(performance.now() / 1000); saveHash(); ui.refresh(); }
     else if (key === 'cover') { pool.setCover(v); shadowDirty = true; invalidateAR(); saveHash(); ui.refresh(); if (v === 'roof') views.wide(); }
     else if (key === 'time') { setTime(v); saveHash(); }
@@ -611,7 +625,7 @@ async function calibrate() {
   try {
     const gl = renderer.getContext(); if (!gl.getExtension('EXT_disjoint_timer_query_webgl2')) return;
     let ms = await bench(10), tries = 0;
-    while (ms > 15.5 && tries++ < 3 && perf.scale > SCALES[SCALES.length - 1]) { const want = Math.sqrt(14.5 / ms) * perf.scale; setScale(SCALES.find((v) => v <= want + 1e-6) || SCALES[SCALES.length - 1]); ms = await bench(8); }
+    while (ms > 17.5 && tries++ < 3 && perf.scale > SCALES[SCALES.length - 1]) { const want = Math.sqrt(15.5 / ms) * perf.scale; setScale(SCALES.find((v) => v <= want + 1e-6) || SCALES[SCALES.length - 1]); ms = await bench(8); }
     tick('kalibriert: ' + ms.toFixed(1) + ' ms GPU bei ' + Math.round(perf.scale * 100) + ' % Auflösung');
   } catch { /* egal */ }
 }
@@ -657,19 +671,49 @@ renderer.setAnimationLoop(() => {
   if (lampLevel > 0 && state.extras.light === 'wechsel') applyLightColor(clock);
   if (shadowDirty) { renderer.shadowMap.needsUpdate = true; shadowDirty = false; }
   post.render(dt);
-  if (!started && assetsDone) { started = true; window.__started = true; ld.done(); tick('erstes Bild nach Preloader'); $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); setTimeout(() => { prefetch(); loadHDRI('evening'); loadHDRI('night'); }, 1500); }       // übrige Tageszeiten leise nachladen
+  if (!started && assetsDone) { started = true; window.__started = true; ld.done(); tick('erstes Bild nach Preloader'); $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); }
   if (ar.building || params.has('fixed')) return;
   if (warm > 0) { warm--; return; }
   if (idle || document.hidden) { samples.length = 0; return; }       // Leerlauf (30 fps) und Hintergrund-Tab sagen nichts über die Leistung
   samples.push(dt); if (samples.length >= 30) { samples.sort((x, y) => x - y); perfStep(samples[15] * 1000); samples.length = 0; }       // Median: einzelne Ruckler (Speicherbereinigung, Seitenwechsel) lösen nichts aus
 });
 
+/** Alle Tageszeiten vorab berechnen (Himmel, Umgebungslicht, Kulisse): der spätere Wechsel ist ein reines Umschalten ohne Laden oder Ruckeln */
+async function prepareTimes() {
+  const cur = state.time;
+  const snap = () => { if (safe || photo.on) return; const w = pool.group.getObjectByName('wasser'); return probe.update([w, occluder, shadowCatcher].filter(Boolean), true); };
+  for (const key of Object.keys(TIME)) { await setTime(key); post.render(0); await paint(); const p = snap(); if (p) probeCache[key] = p; await paint(); }       // einmal zeichnen (Himmel-Textur hochladen) und Wasserspiegelung je Zeit aufnehmen
+  await setTime(cur); post.render(0);
+}
+/** Shader und Pipelines vorab erzeugen (jede Kombination einmal zeichnen), damit später nichts „nachlädt“ oder ruckelt */
+async function warmup() {
+  try {
+    await Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 4000))]);
+    const t0 = state.time, g0 = post.glowOn, aa0 = post.aa;
+    post.setGlow(true); post.setAA(false); post.render(0); post.setAA(true); post.render(0);      // Glow und Kantenglättung
+    if (!lite) { setLamps(1); post.render(0); }                                                    // Lampen (Nachtlicht ändert die Shader)
+    setLamps(TIME[t0].lamp); post.setGlow(g0); post.setAA(aa0); post.render(0);
+    // jede Abdeckung, jeden Belag, jedes Zubehör einmal zeichnen (Textur-Upload, Shader): später kein Ruckeln beim ersten Umschalten
+    const cov0 = state.cover, c0 = state.coping, d0 = state.deck;
+    for (const c of Object.keys(COVER)) { pool.setCover(c); post.render(0); } pool.setCover(cov0);
+    for (const k of Object.keys(COPING)) { state.coping = k; swapStone(); post.render(0); }
+    for (const k of Object.keys(DECK)) { state.deck = k; if (!swapStone()) { rebuild(); } post.render(0); }
+    state.coping = c0; state.deck = d0; if (!swapStone()) rebuild();
+    const ex0 = JSON.stringify(state.extras); for (const k of Object.keys(EXTRAS)) state.extras[k] = true; state.extras.loungers = 4;
+    buildExtrasNow(); post.render(0); Object.assign(state.extras, JSON.parse(ex0)); buildExtrasNow(); post.render(0);
+    if (!safe) { const w = pool.group.getObjectByName('wasser'); mats.water.envMap = probe.update([w, occluder, shadowCatcher].filter(Boolean)); probeOn = true; mats.water.needsUpdate = true; post.render(0); }
+  } catch (e) { console.warn('Aufwärmen übersprungen', e); }
+}
+
 /* ---------- Start ---------- */
 tick('vor ui');
 ui = initUI(api);
 track('start', { w: innerWidth, mobile: isMobile });
 await paint(); rebuild(); tick('pool+garten+zubehoer'); ld.stage('Himmel wird berechnet …', 0.55); await paint();
-await setTime(state.time); tick('himmel'); ld.stage('Letzte Schritte …', 0.8); sceneReady && sceneReady();
+await setTime(state.time); tick('himmel'); ld.stage('Alle Tageszeiten werden vorbereitet …', 0.7);
+await prepareTimes(); await modelsReady(); await whenLoaded(18000);
+ld.stage('Grafik wird vorbereitet …', 0.85); await paint(); await warmup(); tick('aufgewärmt');
+ld.stage('Letzte Schritte …', 0.9); sceneReady && sceneReady();
 if (isSheet()) { $('#cfg').classList.add('collapsed'); $('#b-panel').textContent = 'Konfigurieren ▴'; $('#b-panel').setAttribute('aria-expanded', 'false'); }
 layout();
 camera.position.set(9, 6, 11); controls.target.set(0, -0.2, 0); views.orbit(1);
@@ -685,4 +729,4 @@ async function bench(n = 25) {        // echte GPU-Zeit je Frame (Timer-Query, C
   }
   ts.sort((x, y) => x - y); return ts[n >> 1];
 }
-if (params.has('debug')) window.__app = { bench, THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api, mats, post, stage, perf, setScale };
+if (params.has('debug')) window.__app = { bench, THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api, mats, post, stage, perf, setScale, probe, createProbe };

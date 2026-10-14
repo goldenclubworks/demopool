@@ -33,7 +33,7 @@ Einfache Wandzeit-Messungen waren unbrauchbar (Shader-Compile, V-Sync); die Wert
 | MEDIUM (ohne AO) | 8 ms | 5,6 ms |
 
 ## Leistungsregler (src/main.js: `perfStep`, `calibrate`)
-1. **Start:** Wo der Browser GPU-Zeiten liefert (Chrome/Edge/Android), misst eine Kalibrierung hinter dem Preloader und wählt die Start-Auflösung (Ziel ≤ 15 ms GPU).
+1. **Start:** Wo der Browser GPU-Zeiten liefert (Chrome/Edge/Android), misst eine Kalibrierung hinter dem Preloader und wählt die Start-Auflösung (Ziel ≤ 17 ms GPU).
 2. **Laufend:** Median der Bildzeiten aus 30 aktiven Bildern (kein Leerlauf, kein Hintergrund-Tab; einzelne Ruckler zählen nicht). Über 18,7 ms: Auflösung eine Stufe tiefer (1 → 0,9 → 0,8 → 0,72 → 0,65 → 0,58 → 0,52). Danach Stufe „medium“ (AO aus), zuletzt Sparmodus.
 3. **Erholung:** Läuft es 7 s rund, wird die Auflösung wieder erhöht (nach einem Fehlversuch 45 s Pause); bei voller Auflösung wird „high“ wieder zugeschaltet.
 4. Pixel-Obergrenze 4,6 MP (5K-Displays, große Tablets).
@@ -45,3 +45,15 @@ Chrome, Firefox, Safari-Engine (WebKit), iPhone 15, iPad Pro 11, Pixel 7: durchg
 
 ## Parameter
 `?q=high|medium|low` (Start-Stufe), `?scale=0.8` (feste Auflösung), `?fixed` (Regler aus), `?lite` (Sparmodus), `?debug` (Messfunktionen, Zeiten in der Konsole).
+
+## Kein Nachladen, keine Ruckler (Stand Oktober 2026)
+- **Alles vor dem ersten Bild:** Texturen, alle Belag-Varianten, Pflanzen-Modelle und alle drei Himmel (Tag, Abend, Nacht) laufen über den Preloader. Nach dem Start werden **keine Dateien mehr geladen** (gemessen: 0 Anfragen in Chrome, Safari-Engine, Firefox).
+- **Aufwärmen:** Tageszeiten, Wasserspiegelung je Tageszeit, jede Abdeckung, jeder Rand/Belag und jedes Zubehör werden hinter dem Preloader einmal gezeichnet (Shader, Textur-Upload). Der Start dauert dafür 2–4 s länger, danach gibt es kein Ruckeln beim ersten Umschalten.
+- **Rand/Terrasse umstellen** tauscht nur das Material (kein Neubau); Tageszeitwechsel ist ein reines Umschalten.
+- **Schlimmster Einzelframe je Aktion** (Tageszeit, 5 Modelle, Rand, Terrasse, Abdeckung, Zubehör, Farbe, Paket, Ansichten): vorher bis 600 ms (Tageszeitwechsel, Safari-Engine), jetzt ≤ 60 ms (ein Frame beim Modellwechsel).
+- Regler wird nach Umbauten für ca. 40 Bilder pausiert, damit ein einzelner Umbau nicht die Auflösung senkt.
+
+## Bildfehler („Geisterschleier“, dunkle Fäden)
+- AO mit kleinem Radius/engem Abstandsbereich: große Radien erzeugten helle Schleier und dunkle Säume, wo Nahes vor Fernem steht.
+- Laubkarten: Farbe unter transparenten Pixeln auf Blattgrün gesetzt (Mipmaps mischten Schwarz in die Blattränder).
+- Grashalme: hellere Wurzeln; Himmel: Horizont-Dunst statt schwarzem Baumsaum.

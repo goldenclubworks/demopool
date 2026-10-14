@@ -8,11 +8,14 @@ export function createProbe(renderer, scene, size = 256) {
   const pmrem = new THREE.PMREMGenerator(renderer); let env = null;
   return {
     /** hide: Objekte, die nicht im Schnappschuss erscheinen sollen (Wasser selbst) */
-    update(hide = []) {
+    /** keep = true: Ergebnis wird nicht von der nächsten Aufnahme ersetzt (Zwischenspeicher je Tageszeit) */
+    update(hide = [], keep = false) {
       const was = hide.map((o) => o.visible); hide.forEach((o) => { o.visible = false; });
       cam.update(renderer, scene);
       hide.forEach((o, i) => { o.visible = was[i]; });
-      if (env) env.dispose(); env = pmrem.fromCubemap(rt.texture);
+      const e = pmrem.fromCubemap(rt.texture);
+      if (keep) return e.texture;
+      if (env) env.dispose(); env = e;
       return env.texture;
     },
   };

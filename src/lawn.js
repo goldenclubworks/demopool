@@ -14,7 +14,7 @@ function tuftGeometry() {
       const t = i / seg, y = t * h * 0.062, out = bend * t * t * 0.035, ww = w * (1 - t * 0.9);
       for (const side of [-1, 1]) {                                  // zwei Ränder des Halms, Breite quer zur Biegerichtung
         pos.push(ox + ca * out - sa * ww * side, y, oz + sa * out + ca * ww * side); nor.push(0, 1, 0);
-        const k = 0.2 + 0.8 * t; col.push(0.07 + 0.3 * k, 0.12 + 0.42 * k, 0.04 + 0.12 * k);
+        const k = 0.2 + 0.8 * t; col.push(0.2 + 0.24 * k, 0.3 + 0.34 * k, 0.1 + 0.1 * k);
       }
     }
     for (let i = 0; i < seg; i++) { const q = base + i * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }

@@ -54,7 +54,8 @@ export function createPost(renderer, scene, camera, tier = 'high') {
   composer.addPass(new RenderPass(scene, camera));
   const size = renderer.getSize(new THREE.Vector2());
   const ao = new N8AOPostPass(scene, camera, size.x, size.y);
-  ao.configuration.aoRadius = 0.45; ao.configuration.distanceFalloff = 0.9; ao.configuration.intensity = 2.4; ao.configuration.color = new THREE.Color(0x14181c);
+  // kleiner Radius und enger Abstandsbereich: nur echte Kontaktschatten (Ecken, Fugen); große Radien erzeugten helle Geisterschleier und dunkle Säume, wo Nahes vor Fernem steht
+  ao.configuration.aoRadius = 0.3; ao.configuration.distanceFalloff = 0.25; ao.configuration.intensity = 1.7; ao.configuration.color = new THREE.Color(0x14181c);
   ao.configuration.gammaCorrection = false; ao.configuration.halfRes = true; ao.setQualityMode('Medium');
   // Zwei vollständig getrennte Abschluss-Durchgänge (eigene Effekt-Objekte): geteilte Effekte ließen den Durchgang in der Safari-Engine schwarz rendern
   const finals = [false, true].map((aa) => {
