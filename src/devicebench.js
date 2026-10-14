@@ -3,7 +3,7 @@
 // Es funktioniert in jedem Browser (Wandzeit mit Synchronisation), auch ohne GPU-Zeitmesser.
 import * as THREE from 'three';
 
-const REF_MS = 4;            // Referenz: Apple M1 (Chrome, Safari, Firefox) braucht für den Test 3,3–5 ms; Software-Grafik ca. 470 ms (Verhältnis 0,01)
+const REF_MS = 5;            // Referenz: Apple M1 (Chrome, Safari, Firefox) braucht für den Test 3,3–5 ms (Referenz 5 ms ≈ Verhältnis 1,0); Software-Grafik ca. 470 ms (Verhältnis 0,01)
 export function benchGPU(renderer) {
   const W = 960, H = 640, LAYERS = 60;
   const rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, depthBuffer: false });

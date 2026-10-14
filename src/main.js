@@ -118,15 +118,17 @@ canvas.addEventListener('webglcontextlost', (e) => {                // z. B. Spe
 const bench0 = safe ? null : benchGPU(renderer);
 const gpuClass = ['high', 'mid', 'low'].includes(params.get('class')) ? params.get('class') : safe ? 'low' : classify(bench0.ratio);
 const PROFILE = {
-  high: { mp: isMobile ? 2.4 : 4.6, dpr: isMobile ? 2 : 3, hedge: isMobile ? 0.7 : 1, tree: isMobile ? 0.65 : 1, lawn: isMobile ? 7000 : 15000, shadow: isMobile ? 2048 : 4096, probe: isMobile ? 128 : 256, tier: 'high' },
+  high: { mp: isMobile ? 2.4 : 6.5, dpr: isMobile ? 2 : 3, hedge: isMobile ? 0.7 : 1, tree: isMobile ? 0.65 : 1, lawn: isMobile ? 7000 : 15000, shadow: isMobile ? 2048 : 4096, probe: isMobile ? 128 : 256, tier: 'high' },
   mid: { mp: 1.6, dpr: 2, hedge: 0.5, tree: 0.45, lawn: 3500, shadow: 2048, probe: 128, tier: 'high' },
   low: { mp: 0.9, dpr: 1.5, hedge: 0.3, tree: 0.28, lawn: 0, shadow: 1024, probe: 0, tier: 'medium' },
 }[gpuClass];
 tier0 = ['high', 'medium', 'low'].includes(params.get('q')) ? params.get('q') : PROFILE.tier;
 tick('Geräteklasse ' + gpuClass + (bench0 ? ' (Test ' + bench0.ms.toFixed(1) + ' ms, Verhältnis ' + bench0.ratio.toFixed(2) + ')' : ''));
-const NATIVE = Math.max(1, Math.min(devicePixelRatio, PROFILE.dpr, Math.sqrt((PROFILE.mp * 1e6) / (innerWidth * innerHeight))));      // volle Pixeldichte im Budget der Klasse
+const NATIVE = Math.max(0.5, Math.min(devicePixelRatio, PROFILE.dpr, Math.sqrt((PROFILE.mp * 1e6) / (innerWidth * innerHeight))));      // volle Pixeldichte im Budget der Klasse (auch 4K-Monitore mit Pixeldichte 1)
 const SCALES = [1, 0.9, 0.8, 0.72, 0.65, 0.58, 0.52];                                                      // Stufen der dynamischen Auflösung
-const perf = { tierUpAt: 0, scale: [...SCALES].reverse().find((v) => v >= (+params.get('scale') || 1) - 1e-6) || 1, good: 0, last: 0, noUpUntil: 0, raisedAt: 0 };
+const perf = { probe: false, lastProbe: 0, tierUpAt: 0, scale: [...SCALES].reverse().find((v) => v >= (+params.get('scale') || 1) - 1e-6) || 1, good: 0, last: 0, noUpUntil: 0, raisedAt: 0 };
+// Start-Auflösung aus dem Grafiktest vorhergesagt: Szenenzeit ≈ 3 ms + 2,8 ms je Megapixel bei Verhältnis 1,0 (gemessen auf M1, high am Tag); Ziel ≤ 14 ms. Der Regler verfeinert zur Laufzeit.
+if (!params.has('scale') && !params.has('fixed') && bench0) { const mp = (innerWidth * innerHeight * NATIVE * NATIVE) / 1e6, pred = (3 + 2.8 * mp) / Math.max(0.05, bench0.ratio), want = Math.min(1, Math.sqrt(Math.max(0.1, 14 - 3) / Math.max(0.1, pred - 3))); perf.scale = SCALES.find((v) => v <= want + 1e-6) || SCALES[SCALES.length - 1]; }
 let dpr = NATIVE * perf.scale;
 renderer.setPixelRatio(dpr);
 renderer.toneMapping = THREE.NoToneMapping;                         // Tone-Mapping läuft in der Nachbearbeitung (post.js)
@@ -662,7 +664,7 @@ function goLite() {
 }
 if (params.has('lite')) setTimeout(goLite, 0);
 function perfStep(ms) {                                          // ms = mittlere Bildzeit der letzten Sekunde (nur aktive Bilder)
-  const now = performance.now(), target = 1000 / 60;
+  const now = performance.now(), target = 1000 / 60; perf.probe = false;
   if (ms > target * 1.12) {                                       // zu langsam
     perf.good = 0; if (now - perf.last < 1300) return; perf.last = now;
     if (now - perf.raisedAt < 6000) perf.noUpUntil = now + 45000;  // eben erhöhte Stufe war zu viel: lange nicht wieder probieren
@@ -672,21 +674,11 @@ function perfStep(ms) {                                          // ms = mittler
     else if (!lite) goLite();
     warm = 18;
   } else if (ms <= target * 1.05) {                              // läuft rund
-    if (++perf.good >= 14 && now > perf.noUpUntil && !lite) {
+    if (++perf.good >= 4 && now > perf.noUpUntil && !lite) {
       if (perf.scale < 1) { perf.good = 0; perf.raisedAt = now; setScale(SCALES[Math.max(0, SCALES.indexOf(perf.scale) - 1)]); warm = 12; }
       else if (post.tier === 'medium' && now > perf.tierUpAt) { perf.good = 0; perf.raisedAt = now; post.setTier('high'); setScale(0.9); warm = 12; }       // volle Auflösung stabil: Effekte (AO) wieder zuschalten
     }
   }
-}
-/** Messung beim Start (hinter dem Preloader): echte GPU-Zeit (wo der Browser sie liefert) bestimmt die Start-Auflösung */
-async function calibrate() {
-  if (params.has('fixed') || params.has('scale')) return;
-  try {
-    const gl = renderer.getContext(); if (!gl.getExtension('EXT_disjoint_timer_query_webgl2')) return;
-    let ms = await bench(10), tries = 0;
-    while (ms > 17.5 && tries++ < 3 && perf.scale > SCALES[SCALES.length - 1]) { const want = Math.sqrt(15.5 / ms) * perf.scale; setScale(SCALES.find((v) => v <= want + 1e-6) || SCALES[SCALES.length - 1]); ms = await bench(8); }
-    tick('kalibriert: ' + ms.toFixed(1) + ' ms GPU bei ' + Math.round(perf.scale * 100) + ' % Auflösung');
-  } catch { /* egal */ }
 }
 /* ---------- Größe & Schleife ---------- */
 function resize() {
@@ -704,7 +696,7 @@ const timer = new THREE.Timer();
 const samples = []; let warm = 60, started = false, assetsDone = false, clock = 0, sceneReady = null;
 { // Preloader: sobald alle Dateien da sind und die Szene steht, kalibrieren und enthüllen; spätestens nach 20 s wird enthüllt (Dateien, die nicht kommen, blockieren nicht)
   onProgress(ld.files);
-  Promise.all([whenLoaded(18000), new Promise((r) => { sceneReady = r; })]).then(async () => { ld.stage('Letzte Schritte …', 0.9); await paint(); await calibrate(); assetsDone = true; });
+  Promise.all([whenLoaded(18000), new Promise((r) => { sceneReady = r; })]).then(async () => { ld.stage('Letzte Schritte …', 0.9); await paint(); assetsDone = true; });
 }
 let intro = (params.has('nointro') || matchMedia('(prefers-reduced-motion: reduce)').matches) ? null : { t: 0 };
 // Handy im Leerlauf (keine Berührung, keine Fahrt): nur jedes zweite Bild zeichnen → kühler, akkuschonender
@@ -716,7 +708,9 @@ renderer.setAnimationLoop(() => {
   timer.update(); const dt = Math.min(timer.getDelta(), 0.1); clock += dt;
   // Leerlauf (keine Eingabe, keine Fahrt): nur jedes zweite Bild – spart Akku und Wärme, Wasser läuft mit 30 fps weiter ruhig
   const idle = !tween && !intro && !controls.autoRotate && !photo.on && performance.now() - lastActive > 1500;
-  if (idle && (frameNo++ & 1)) return;
+  // Leerlauf mit reduzierter Auflösung: alle 1,5 s probeweise eine Stufe höher und 30 Bilder lang echt messen (volle Bildrate, ohne Überspringen). Reicht es, bleibt die Stufe, sonst zurück (und 45 s Ruhe).
+  if (idle && !perf.probe && started && !lite && perf.scale < 1 && post.tier === 'high' && !document.hidden) { const t = performance.now(); if (t > perf.noUpUntil && t - perf.lastProbe > 1500) { perf.probe = true; perf.lastProbe = t; perf.raisedAt = t; samples.length = 0; setScale(SCALES[Math.max(0, SCALES.indexOf(perf.scale) - 1)]); warm = 6; } }
+  if (idle && !perf.probe && (frameNo++ & 1)) return;
   if (tween && (started || !intro)) tweenStep(dt);
   if (!photo.on) controls.update();
   if (Math.abs(vo.x - vo.tx) > 0.3 || Math.abs(vo.y - vo.ty) > 0.3) { const f = Math.min(1, dt * 9); vo.x += (vo.tx - vo.x) * f; vo.y += (vo.ty - vo.y) * f; applyVO(); wake(); }
@@ -735,7 +729,7 @@ renderer.setAnimationLoop(() => {
   if (!started && assetsDone) { started = true; window.__started = true; ld.done(); tick('erstes Bild nach Preloader'); $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); setTimeout(prepareOthers, 1500); }
   if (ar.building || params.has('fixed')) return;
   if (warm > 0) { warm--; return; }
-  if (idle || document.hidden) { samples.length = 0; return; }       // Leerlauf (30 fps) und Hintergrund-Tab sagen nichts über die Leistung
+  if ((idle && !perf.probe) || document.hidden) { samples.length = 0; return; }       // Leerlauf (30 fps) und Hintergrund-Tab sagen nichts über die Leistung
   samples.push(dt); if (samples.length >= 30) { samples.sort((x, y) => x - y); perfStep(samples[15] * 1000); samples.length = 0; }       // Median: einzelne Ruckler (Speicherbereinigung, Seitenwechsel) lösen nichts aus
 });
 

@@ -79,3 +79,11 @@ Der Leistungsregler (siehe oben) korrigiert zur Laufzeit. Erzwingen zum Testen: 
 - Rasenhalme werden einen Takt nach dem Umbau gebaut; Modellwechsel bleibt unter ca. 50 ms (ein Bild).
 - **Fehler behoben:** Preis/Link zeigten nach dem Aufwärmen kurz den Zustand mit allen Extras (Aufwärmen schreibt jetzt nichts mehr in Oberfläche und Link).
 - **Bildfehler:** Lichterkette (Kabel 1,3 cm statt 0,6 mm), Sichtschutz (unbeleuchtete Rückwand, matte Lamellen, dunkle Oberseiten gegen helle Striche), leere Zeichenfläche nach Größenänderung (sofortiges Neuzeichnen).
+
+## Desktop-Prüfung (Chrome, Safari-Engine, Firefox × 6 Bildschirme)
+1366×768, 1920×1080, 1440×900 @2×, 2560×1440, 3840×2160 (4K), 2560×1440 @2× (5K): durchgehend 60 fps (Safari-Engine bei 4K anfangs 53 fps, bis der Regler die Stufe gefunden hat), Start ca. 3 s (lokal), JS-Heap 50–80 MB, Größenänderung des Fensters korrekt, keine Konsolenfehler. Bis 2560×1440 und Retina 2880×1800 volle Auflösung, bei 4K/5K 58–80 %.
+
+Beim Prüfen der live Seite gefunden und behoben:
+- **Start-Kalibrierung mit GPU-Zeitmesser konnte sich aufhängen** (bei 4K in Chrome 31 s). Ersetzt durch eine **Vorhersage der Start-Auflösung aus dem Grafiktest** (3 ms + 2,8 ms je Megapixel, durch die Geräteklasse geteilt): kein Warten, in jedem Browser gleich.
+- **Zu unscharfer Start** (80/58/52 %) und sehr langsame Rückkehr zur vollen Schärfe (nur bei Bedienung, 14 Messungen je Stufe): jetzt **Probe im Leerlauf** – alle 1,5 s eine Stufe höher rendern und 30 Bilder messen; reicht es, bleibt es, sonst zurück mit 45 s Ruhe. Von 52 % auf 100 % in ca. 7 s.
+- **Pixelbudget galt nicht bei Pixeldichte 1** (4K-Monitor renderte immer volle 8,3 MP): Budget jetzt auch dort wirksam (Desktop 6,5 MP, Untergrenze 50 %).
