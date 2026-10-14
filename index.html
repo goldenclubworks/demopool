@@ -124,8 +124,11 @@
     .pk { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; } .pk button { flex-direction: column; align-items: flex-start; gap: 2px; border: 1.5px solid var(--line); border-radius: 12px; padding: 8px 10px; min-height: 0; text-align: left; }
     .pk button b { font-size: 13.5px; } .pk button span { font-size: 11px; color: var(--muted); line-height: 1.3; } .pk button:hover { border-color: var(--accent); } .pk button[aria-pressed="true"] span { color: var(--accent-ink); }
     .inbox { text-align: left; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--bg); margin: 8px 0; font-size: 12.5px; }
+    .ib-bom { margin-top: 8px; font-size: 11.5px; } .ib-bom summary { cursor: pointer; font-weight: 600; } .ib-bom table { width: 100%; border-collapse: collapse; margin-top: 4px; } .ib-bom td { padding: 2px 4px; border-bottom: 1px solid var(--line); vertical-align: top; } .ib-bom td:first-child { color: var(--muted); white-space: nowrap; } .ib-bom td:last-child { text-align: right; white-space: nowrap; } .ib-hint { margin: 8px 0 0; font-size: 11.5px; color: var(--muted); }
     .ib-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; } .ib-score { color: #fff; font-size: 11px; padding: 2px 9px; border-radius: 99px; font-weight: 600; } .ib-meta { margin: 4px 0 8px !important; font-size: 11.5px !important; }
     .ib-body { display: flex; gap: 10px; align-items: flex-start; } .ib-body img { width: 38%; border-radius: 8px; flex: none; } .ib-body ul { margin: 0; padding-left: 16px; line-height: 1.45; color: var(--ink); }
+    .lnk { background: none; border: 0; padding: 8px 0; color: var(--accent, #0a6c8a); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; min-height: 44px; }
+    .rulebar { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(10,108,138,.09); font-size: 12.5px; line-height: 1.4; } .rulebar p { margin: 0 0 4px; }
     .hints { margin-top: 10px; font-size: 12.5px; color: var(--muted); } .hints summary { cursor: pointer; font-weight: 600; color: var(--ink); } .hints ul { padding-left: 18px; line-height: 1.45; }
     #foot a { color: var(--muted); }
     .embed #head { padding-top: 10px; } .embed #brand-eyebrow { display: none; }
@@ -175,7 +178,7 @@
   <nav id="viewbar" class="panel" aria-label="Ansicht"><button data-v="orbit">Außen</button><button data-v="top">Von oben</button><button data-v="near">Nah</button><button data-v="spin" aria-pressed="false">Rundflug</button><button data-v="dims" aria-pressed="false">Maße</button><button data-v="before" aria-pressed="false">Vorher</button><button data-v="photo" title="Eigenes Gartenfoto hochladen – bleibt auf Ihrem Gerät">Mein Foto</button></nav>
   <input type="file" id="ph-pick" accept="image/*" hidden />
   <section id="photo-ui" class="panel" hidden aria-label="Gartenfoto">
-    <div class="ph-title"><b>Ihr Garten</b><span>Ziehen Sie das Becken an die richtige Stelle. Das Foto bleibt auf Ihrem Gerät.</span></div>
+    <div class="ph-title"><b>Ihr Garten</b><span>Ziehen Sie das Becken an die richtige Stelle – ein Eindruck, keine maßstäbliche Planung. Das Foto bleibt auf Ihrem Gerät.</span></div>
     <div class="ph-sl"><label>Drehen<input id="ph-rot" type="range" min="0" max="360" step="1" value="0"></label><label>Sonne<input id="ph-sun" type="range" min="0" max="360" step="1" value="0"></label><label>Horizont<input id="ph-pitch" type="range" min="-40" max="8" step="1" value="-14"></label><label>Höhe<input id="ph-h" type="range" min="0.6" max="3.5" step="0.1" value="1.6"></label></div>
     <div class="ph-btn"><button class="ghost" id="ph-close">Zurück</button><button class="solid" id="ph-save">Bild speichern</button></div>
   </section>

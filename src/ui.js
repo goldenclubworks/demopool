@@ -25,7 +25,7 @@ export function initUI(api) {
   const s1 = `<section class="step" data-step="1"><h2>${esc(TEXT.title)}</h2><p class="lead">${esc(TEXT.lead)}</p>
     <div class="cards" id="o-model">${MODELS.map((m) => `<button class="mc" data-v="${m.id}" aria-pressed="${state.model === m.id}">${outlineSvg(m.shape, m.length, m.width)}<b>${m.name}</b><span>${fmtM(m.length)} × ${fmtM(m.width)} m · ${m.tag}</span>${api.showPrices ? `<em>ab ${fmtEur(m.price)}</em>` : ''}</button>`).join('')}</div>
     ${MODELS.some((m) => m.steps !== 'none') ? `<div class="sec"><div class="lab">Treppe</div>${seg('o-steps', STEP_NAMES, state.steps)}</div>` : '<div hidden id="o-steps"></div>'}
-    ${api.free ? `<div class="sec"><div class="lab">Freie Maße</div><label>Länge <output id="v-length"></output></label><input id="s-length" type="range" min="${Math.min(3, ...MODELS.map((m) => m.length))}" max="16" step="0.5"><label>Breite <output id="v-width"></output></label><input id="s-width" type="range" min="${Math.min(2, ...MODELS.map((m) => m.width))}" max="6.5" step="0.25"><label>Tiefe <output id="v-depth"></output></label><input id="s-depth" type="range" min="${Math.min(1, ...MODELS.map((m) => m.depth))}" max="2.4" step="0.1"></div>` : ''}
+    <div class="sec" id="sz-sec"><div class="lab">Maße anpassen <small id="sz-hint">innerhalb der Modellgrenzen</small></div><label>Länge <output id="v-length"></output></label><input id="s-length" type="range" min="3" max="16" step="0.25"><label>Breite <output id="v-width"></output></label><input id="s-width" type="range" min="2" max="6.5" step="0.25"><label>Tiefe <output id="v-depth"></output></label><input id="s-depth" type="range" min="1" max="2.4" step="0.1"><button type="button" class="lnk" id="sz-reset" hidden>Standardmaß wiederherstellen</button><div class="rulebar" id="rule-bar" role="status" aria-live="polite" hidden></div></div>
     <dl class="facts"><dt>Maße</dt><dd id="d-size"></dd><dt>Tiefe</dt><dd id="d-depth"></dd><dt>Wasserfläche</dt><dd id="d-area"></dd><dt>Wasserinhalt</dt><dd id="d-vol"></dd></dl></section>`;
   const s2 = `<section class="step" data-step="2"><h2>Farbe &amp; Beckenrand</h2>
     <div class="sec"><div class="lab">Beckenfarbe</div><div id="o-liner">${Object.entries(LINERS).map(([k, l]) => `<button class="sw" data-v="${k}" title="${l.name}" aria-label="${l.name}" aria-pressed="${state.liner === k}" style="--c:#${l.hex.toString(16).padStart(6, '0')}"></button>`).join('')}</div><p class="note" id="n-liner"></p></div>
@@ -66,7 +66,8 @@ export function initUI(api) {
     $('#o-extras').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(!!state.extras[b.dataset.k])));
   }
   const pack = $('#o-pack'); if (pack) pack.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; pressIn(pack, (x) => x === b); api.applyPackage(b.dataset.v); sync(); refresh(); });
-  if (api.free) for (const k of ['length', 'width', 'depth']) $('#s-' + k).addEventListener('input', (e) => { api.changeSize(k, +e.target.value); refresh(); });
+  for (const k of ['length', 'width', 'depth']) $('#s-' + k).addEventListener('input', (e) => { api.changeVariant(k, +e.target.value); refresh(); });
+  $('#sz-reset').addEventListener('click', () => { api.resetVariant(); sync(); refresh(); });
 
   let step = 1;
   function setStep(n, { silent = false } = {}) {
@@ -112,7 +113,12 @@ export function initUI(api) {
       $('#d-size').textContent = `${fmtM(state.length)} × ${fmtM(state.width)} m`;
       $('#d-depth').textContent = state.depth <= 1.4 ? `${fmtM(state.depth)} m` : `1,1 – ${fmtM(state.depth)} m`;
       $('#d-area').textContent = `${fmtM(d.area)} m²`; $('#d-vol').textContent = `${fmtM(d.volume)} m³`;
-      if (api.free) for (const k of ['length', 'width', 'depth']) { $('#s-' + k).value = state[k]; $('#v-' + k).textContent = fmtM(state[k]) + ' m'; }
+      const lim = api.limits(), mod = api.model();
+      for (const [k, def] of [['length', [3, 16, 0.25]], ['width', [2, 6.5, 0.25]], ['depth', [1, 2.4, 0.1]]]) {
+        const { min: a, max: b, step: st } = lim ? lim[k] : { min: def[0], max: def[1], step: def[2] }, el = $('#s-' + k); el.min = a; el.max = b; el.step = st; el.value = state[k]; $('#v-' + k).textContent = fmtM(state[k]) + ' m'; el.disabled = a === b;
+      }
+      $('#sz-reset').hidden = !(mod && (state.length !== mod.length || state.width !== mod.width || state.depth !== mod.depth));
+      const rb = $('#rule-bar'), rn = api.ruleNotes(); rb.hidden = !rn.length; rb.innerHTML = rn.map((t) => `<p>${esc(t)}</p>`).join('');
       const p = api.price();
       priceEl.textContent = `ab ca. ${fmtEur(p.total)}`;
       breakEl.innerHTML = p.lines.map(([l, v]) => `<div><span>${esc(l)}</span><b>${fmtEur(v)}</b></div>`).join('');

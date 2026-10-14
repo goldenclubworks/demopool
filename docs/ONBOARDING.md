@@ -29,6 +29,7 @@ Ohne `brand.lead` läuft der Konfigurator im **Demo-Modus**: Das Formular funkti
   "kunde": { "name": "…", "email": "…", "tel": "…", "plz": "80331", "when": "sofort", "msg": "…" },
   "konfiguration": { "model": "marina", "liner": "blau", "coping": "stein", "deck": "holz", "extras": { "parasol": true, "loungers": 2 } },
   "zusammenfassung": ["Modell: Marina …"], "richtpreis": "ab ca. 48.250 €", "link": "https://…#cfg=…",
+  "stueckliste": [{ "artikel": "DEMO-BECKEN-MARINA", "text": "Becken Marina …", "menge": 1, "einheit": "Stk" }], "hinweise": ["…"],
   "bild": "data:image/jpeg;base64,…", "bewertung": { "punkte": 88, "stufe": "heiß" }, "zeitpunkt": "2026-10-13T…" }
 ```
 
@@ -38,3 +39,12 @@ Ohne `brand.lead` läuft der Konfigurator im **Demo-Modus**: Das Formular funkti
 
 ## Rechtliches (vor dem ersten Kunden)
 Impressum und Datenschutz des Anbieters verlinken (`brand`), Auftragsverarbeitungsvertrag (AVV) mit jedem Kunden, der Anfragen über den Konfigurator erhält, Haftungsausschluss „Maße und Preise unverbindlich“ (steht in der Oberfläche und im PDF). Lizenzen der Assets: `LICENSE-THIRD-PARTY.md`. Dies ist keine Rechtsberatung.
+
+
+## Maßvarianten, Regeln, Artikelnummern (Katalog)
+- Je Modell optional `"limits": { "length": [min, max, Schritt], "width": [...], "depth": [...] }` – die Regler in Schritt 1 bewegen sich nur in diesen Grenzen (ohne Angabe: Länge ±15 %, Breite ±10 %, Tiefe −0,2/+0,3 m). Das Modell bleibt gewählt; die Abweichung erscheint als Position „Maßanpassung“ (Aufpreis nach Fläche, Mehrtiefe).
+- `"sku"` je Modell/Option: Artikelnummer in Stückliste (PDF, Anfrage). Ohne Angabe erscheinen Muster-Nummern `DEMO-…`.
+- `"rules"`: Mindest-/Höchstmaße (z. B. `stepsFullMinWidth`, `jetMinLength`, `waterfallMinWidth`, `roofMaxLength`, `permitVolume`). Unbaubare Kombinationen werden automatisch korrigiert und mit Hinweis angezeigt.
+- Mindestanforderungen für Kunden: Katalogdatei (JSON), Logo/Farbe, Anfrage-Adresse (Webhook) oder Mail, Impressum/Datenschutz-Links.
+- Testanfrage-Checkliste: Anfrage mit Testdaten senden → kommt Mail/CRM-Eintrag an? Bild, Stückliste, Hinweise vorhanden? Bewertung plausibel? PDF öffnet sich?
+- `?info` blendet Geräteklasse, Auflösung, Bildrate, Grafikchip und Browser ein (für Screenshots am Kundenrechner).

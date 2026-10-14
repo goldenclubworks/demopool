@@ -17,7 +17,7 @@ export async function buildPdf(ctx) {
     const contact = [ctx.brand.firma, ctx.brand.adresse, ctx.brand.tel, ctx.brand.mail].filter(Boolean).join('  ·  ');
     doc.text(contact || 'Unverbindliche Visualisierung (Demo)', M, 289);
     doc.text(`Seite ${page}`, W - M, 289, { align: 'right' });
-    doc.text('Unverbindliche Visualisierung. Maße, Preise und Ausführung werden im Angebot bestätigt.', M, 293);
+    doc.text((ctx.demo ? 'Muster-Demo: Modelle, Maße und Preise sind Beispiele. Unverbindliche Visualisierung.' : 'Unverbindliche Visualisierung. Maße, Preise und Ausführung werden im Angebot bestätigt.'), M, 293);
   };
   const newPage = () => { footer(); doc.addPage(); page++; y = 20; };
   const need = (h) => { if (y + h > 278) newPage(); };
@@ -45,6 +45,11 @@ export async function buildPdf(ctx) {
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 40, 50);
   for (const l of ctx.lines) { const parts = doc.splitTextToSize(l, CW - 4); need(parts.length * 5 + 1); doc.text('•', M, y); doc.text(parts, M + 4, y); y += parts.length * 5 + 0.5; }
 
+  // Stückliste mit Muster-Artikelnummern
+  if (ctx.bom && ctx.bom.length) {
+    h2('Stückliste (Muster-Artikelnummern)'); doc.setFontSize(8.5);
+    for (const r of ctx.bom) { const t = doc.splitTextToSize(r.text, CW - 62); need(t.length * 4 + 2); doc.setTextColor(90, 107, 120); doc.text(r.artikel, M, y); doc.setTextColor(30, 40, 50); doc.text(t, M + 44, y); doc.text(`${String(r.menge).replace('.', ',')} ${r.einheit}`, W - M, y, { align: 'right' }); y += t.length * 4 + 1.5; }
+  }
   // Preis
   if (ctx.price) {
     h2('Kostenübersicht (Richtwert)');

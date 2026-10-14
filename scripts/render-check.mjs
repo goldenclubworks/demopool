@@ -5,7 +5,7 @@
 import { chromium, webkit, firefox } from 'playwright-core';
 const base = process.env.BASE_URL || 'http://localhost:4173';
 const want = (process.env.BROWSERS || 'chrome').split(',');
-const engines = { chrome: () => chromium.launch({ channel: 'chrome', args: ['--use-angle=metal', '--ignore-gpu-blocklist'] }), webkit: () => webkit.launch(), firefox: () => firefox.launch() };
+const engines = { chrome: () => chromium.launch({ channel: 'chrome', args: ['--use-angle=metal', '--ignore-gpu-blocklist'] }), webkit: () => webkit.launch(process.env.WEBKIT_PATH ? { executablePath: process.env.WEBKIT_PATH } : {}), firefox: () => firefox.launch(process.env.FIREFOX_PATH ? { executablePath: process.env.FIREFOX_PATH } : {}) };
 const sizes = [['Desktop 1300×800', { width: 1300, height: 800 }], ['Handy 393×659', { width: 393, height: 659 }], ['Tablet 820×1100', { width: 820, height: 1100 }]];
 let bad = 0;
 for (const name of want) {

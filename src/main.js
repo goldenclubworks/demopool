@@ -13,7 +13,8 @@ import { buildPool, groundGeometry, patchGeometry } from './pool.js';
 import { buildExtras } from './extras.js';
 import { buildGarden } from './garden.js';
 import { COPING_W } from './pool.js';
-import { MODELS, LINERS, STEP_NAMES, COPING, DECK, COVER, TIMES, LIGHTS, EXTRAS, PACKAGES, TEXT, FINANCE, CATALOG, modelById, defaultExtras, priceOf, fmtEur, monthlyRate, yearlyCosts, applyCatalog } from './catalog.js';
+import { MODELS, LINERS, STEP_NAMES, COPING, DECK, COVER, TIMES, LIGHTS, EXTRAS, PACKAGES, TEXT, FINANCE, CATALOG, modelById, defaultExtras, priceOf, fmtEur, monthlyRate, yearlyCosts, applyCatalog, limitsOf, bomOf } from './catalog.js';
+import { applyRules, ruleHints } from './rules.js';
 import { initUI } from './ui.js';
 import { track, setSink } from './track.js';
 import { formHtml, readForm, scoreOf, inboxHtml, send as sendLead } from './lead.js';
@@ -65,6 +66,8 @@ if (brand.farbe) document.documentElement.style.setProperty('--accent', brand.fa
 $('#brand-name').textContent = brand.firma || TEXT.intro;
 document.title = brand.firma ? `${TEXT.intro} – ${brand.firma}` : TEXT.intro;
 $('#brand-eyebrow').textContent = brand.firma ? TEXT.intro : '3D-Konfigurator';
+const demoMode = !brand.firma || !!params.get('firma');
+if (demoMode) $('#foot').textContent = params.get('firma') ? `Demo-Vorschau für ${brand.firma} – kein Angebot dieses Unternehmens. Modelle, Maße und Preise sind Beispiele.` : 'Muster-Demo – Modelle, Maße und Preise sind Beispiele. Unverbindliche Visualisierung.';
 if (brand.logo) { const i = $('#brand-logo'); i.src = brand.logo; i.hidden = false; i.addEventListener('error', () => { i.hidden = true; }); }
 { const f = $('#foot'); const l = [['Impressum', brand.impressum], ['Datenschutz', brand.datenschutz]].filter((x) => x[1]).map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t}</a>`).join(' · '); if (l) f.innerHTML += ` ${l}`; }
 setSink({ url: brand.stats, embed, catalog: CATALOG.id });
@@ -73,12 +76,16 @@ setSink({ url: brand.stats, embed, catalog: CATALOG.id });
 const first = (o, pref) => (pref in o ? pref : Object.keys(o)[0]);
 const state = { model: MODELS[0].id, shape: 'round', length: 7, width: 3.5, depth: 1.5, steps: 'corner', liner: Object.keys(LINERS)[0], coping: first(COPING, 'stein'), deck: first(DECK, 'holz'), cover: 'none', time: 'day', garden: true, extras: defaultExtras() };
 for (const k of Object.keys(state.extras)) if (!(k in EXTRAS) && !['loungers', 'light'].includes(k)) state.extras[k] = false;
+const snapTo = (l, v) => +(Math.min(l.max, Math.max(l.min, l.min + Math.round((v - l.min) / l.step) * l.step))).toFixed(2);
+let ruleFixes = [];                                              // zuletzt vorgenommene Regel-Korrekturen (werden im Panel genannt, bis zur nächsten Änderung)
+/** Regeln anwenden; true, wenn etwas korrigiert wurde (dann Hinweis zeigen) */
+function enforce(announce) { const f = applyRules(state); if (f.length) { ruleFixes = f; if (announce) toast(f[0]); } return f.length > 0; }
 function applyModel(id) { const m = modelById(id); Object.assign(state, { model: m.id, shape: m.shape, length: m.length, width: m.width, depth: m.depth, steps: m.steps }); }
 applyModel(MODELS[Math.min(1, MODELS.length - 1)].id);
 const clampNum = (v, a, b, d) => (Number.isFinite(+v) ? Math.min(b, Math.max(a, +v)) : d);
 function applyCfg(c) {
   if (!c || typeof c !== 'object') return;
-  if (MODELS.some((m) => m.id === c.model)) applyModel(c.model);
+  if (MODELS.some((m) => m.id === c.model)) { applyModel(c.model); const lim = limitsOf(modelById(c.model)); for (const k of ['length', 'width', 'depth']) if (Number.isFinite(+c[k])) state[k] = snapTo(lim[k], +c[k]); }       // Maßvariante innerhalb der Herstellergrenzen
   else if (c.model === 'frei' || ['rect', 'round', 'oval', 'roman', 'kidney'].includes(c.shape)) {      // freie Maße / alte Links ohne Modell
     state.model = 'frei'; if (['rect', 'round', 'oval', 'roman', 'kidney'].includes(c.shape)) state.shape = c.shape;
     state.length = clampNum(c.length, 1.5, 16, state.length); state.width = clampNum(c.width, 1, 6.5, state.width); state.depth = clampNum(c.depth, 0.5, 2.4, state.depth);
@@ -98,6 +105,7 @@ function applyCfg(c) {
 }
 try { const m = location.hash.match(/cfg=([\w-]+)/); if (m) applyCfg(JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/')))))); } catch { /* ungültiger Link */ }
 if (params.has('frei') && state.model !== 'frei') state.model = 'frei';
+ruleFixes = applyRules(state);                                    // geladener Link/Katalog: unbaubare Kombinationen korrigieren
 let hashT = 0;
 let warming = false;                                                // Aufwärmen: Zwischenzustände nie in Link oder Oberfläche schreiben
 const saveHash = () => { if (warming) return; clearTimeout(hashT); hashT = setTimeout(writeHash, 250); };
@@ -392,11 +400,11 @@ function layout(snap = false) {
 /* ---------- Anfrage, Zusammenfassung ---------- */
 const fmt = (v, d = 1) => v.toFixed(d).replace('.', ',');
 function summaryLines() {
-  const d = pool.dims, x = state.extras, m = state.model === 'frei' ? 'Individuell' : modelById(state.model).name;
+  const d = pool.dims, x = state.extras, mod = state.model === 'frei' ? null : modelById(state.model), m = mod ? mod.name : 'Individuell', f2 = (v) => (+v).toFixed(2).replace(/0$/, '').replace(/\.$/, '').replace('.', ','), changed = mod && (state.length !== mod.length || state.width !== mod.width || state.depth !== mod.depth);
   const ex = Object.keys(EXTRAS).filter((k) => x[k]).map((k) => EXTRAS[k].name);
   if (x.loungers) ex.push(`${x.loungers} Liegen`);
   return [
-    `Modell: ${m} (${fmt(state.length)} × ${fmt(state.width)} m, Tiefe ${state.depth <= 1.4 ? fmt(state.depth) : '1,1 – ' + fmt(state.depth)} m)`,
+    `Modell: ${m} (${f2(state.length)} × ${f2(state.width)} m, Tiefe ${state.depth <= 1.4 ? f2(state.depth) : '1,1 – ' + f2(state.depth)} m)${changed ? ` – angepasst (Standard ${f2(mod.length)} × ${f2(mod.width)} m)` : ''}`,
     `Wasserfläche ${fmt(d.area)} m², Wasserinhalt ca. ${fmt(d.volume)} m³`, `Treppe: ${STEP_NAMES[state.steps]} · Beckenfarbe: ${LINERS[state.liner].name}`,
     `Beckenrand: ${COPING[state.coping].name} · Terrasse: ${DECK[state.deck].name}`, `Abdeckung: ${COVER[state.cover].name} · Beleuchtung: ${LIGHTS[x.light].name}`,
     `Extras: ${ex.length ? ex.join(', ') : 'keine'}`,
@@ -439,7 +447,7 @@ function captureViews() {
 /** Hinweise zur Planung (allgemein, keine Rechtsberatung) */
 function planningNotes() {
   const v = pool.dims.volume, n = [];
-  n.push(v > 100 ? `Mit ca. ${fmt(v)} m³ Beckeninhalt ist in den meisten Bundesländern eine Baugenehmigung nötig. Bitte frühzeitig bei der Gemeinde klären.` : `Pools bis 100 m³ (hier ca. ${fmt(v)} m³) sind in vielen Bundesländern genehmigungsfrei. Die Landesbauordnung und örtliche Satzungen sind trotzdem zu prüfen.`);
+  n.push(...ruleFixes, ...ruleHints(state, v));
   n.push('Für den Aushub sollte eine Zufahrt von mindestens 2,5 m Breite für den Bagger vorhanden sein.');
   n.push('Abstand zu Nachbargrenzen, Bäumen und Leitungen (Strom, Wasser, Abwasser) vor der Planung klären.');
   n.push('Elektroanschluss für Pumpe, Beleuchtung und Wärmepumpe immer durch einen Elektrofachbetrieb.');
@@ -451,7 +459,7 @@ async function makePdf() {
   if (pdfBusy) return; pdfBusy = true; toast('PDF wird erstellt …');
   try {
     const { buildPdf } = await import('./pdf.js'), e = extraInfo(), p = price();
-    const doc = await buildPdf({ brand, title: `${TEXT.product}-Konfigurator`, lines: summaryLines(), price: showPrices ? p : null, images: captureViews(), link: location.href, id: cfgId(), notes: e.notes, finance: e.finance, yearly: e.yearly, accent: brand.farbe || getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() });
+    const doc = await buildPdf({ brand, title: `${TEXT.product}-Konfigurator`, lines: summaryLines(), price: showPrices ? p : null, images: captureViews(), link: location.href, id: cfgId(), notes: e.notes, demo: demoMode, bom: showPrices ? bomOf(p) : null, finance: e.finance, yearly: e.yearly, accent: brand.farbe || getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() });
     doc.save(`${nowSlug()}-konfiguration-${cfgId()}.pdf`); track('pdf'); toast('PDF gespeichert');
   } catch (err) { console.warn(err); toast('PDF konnte nicht erstellt werden'); }
   finally { pdfBusy = false; }
@@ -471,7 +479,7 @@ function ask() {
     if (r.err.length) { errEl.textContent = r.err[0]; errEl.hidden = false; return; }
     const btn = $('#lead-send'); btn.disabled = true; btn.textContent = 'Wird gesendet …';
     const img = await scaleImg(await snap(), 640);
-    const payload = { typ: 'anfrage', katalog: CATALOG.id, betreff: TEXT.mailSubject, kunde: r.data, konfiguration: JSON.parse(JSON.stringify(state)), zusammenfassung: summaryLines(), richtpreis: showPrices ? `ab ca. ${fmtEur(p.total)}` : '', link: location.href, bild: img ? img.url : '', bewertung: scoreOf(r.data, p.total), zeitpunkt: new Date().toISOString() };
+    const payload = { typ: 'anfrage', katalog: CATALOG.id, betreff: TEXT.mailSubject, kunde: r.data, konfiguration: JSON.parse(JSON.stringify(state)), zusammenfassung: summaryLines(), richtpreis: showPrices ? `ab ca. ${fmtEur(p.total)}` : '', link: location.href, bild: img ? img.url : '', stueckliste: showPrices ? bomOf(p) : [], hinweise: [...ruleFixes, ...ruleHints(state, pool.dims.volume)], bewertung: scoreOf(r.data, p.total), zeitpunkt: new Date().toISOString() };
     const res = r.spam ? { mode: 'sent' } : await sendLead(brand, payload);
     if (!r.spam) { track('lead_sent', { modell: state.model, preis: Math.round(p.total), bewertung: payload.bewertung.stufe }); track('lead', payload, { personal: true }); }
     const pdfBtn = '<button class="ghost" id="b-lead-pdf">Angebots-PDF speichern</button>';
@@ -596,6 +604,16 @@ addEventListener('resize', () => { if (photo.on) photoFit(); });
 let ui = null;
 const api = {
   state, showPrices, free: params.has('frei'),
+  /** Maße eines festen Modells innerhalb der Herstellergrenzen ändern (Modell bleibt gewählt) */
+  model: () => (state.model === 'frei' ? null : modelById(state.model)),
+  limits: () => (state.model === 'frei' ? null : limitsOf(modelById(state.model))),
+  changeVariant(k, v) {
+    if (state.model === 'frei') return api.changeSize(k, v);
+    const lim = api.limits()[k]; if (!lim) return;
+    ruleFixes = []; state[k] = snapTo(lim, +v); enforce(true); track('variant', { k, v: state[k] }); scheduleRebuild();
+  },
+  resetVariant() { const m = modelById(state.model); ruleFixes = []; Object.assign(state, { length: m.length, width: m.width, depth: m.depth }); enforce(true); scheduleRebuild(); },
+  ruleNotes: () => ruleFixes,
   applyPackage(id) {
     const pk = PACKAGES.find((q) => q.id === id); if (!pk) return;
     const st = pk.set || {};
@@ -605,12 +623,14 @@ const api = {
     if ([0, 1, 2, 4].includes(st.loungers)) state.extras.loungers = st.loungers;
     if (st.light in LIGHTS) state.extras.light = st.light;
     if (Array.isArray(st.extras)) for (const k of Object.keys(EXTRAS)) state.extras[k] = st.extras.includes(k);
-    track('package', { id }); rebuild(); applyLightColor(performance.now() / 1000); if (state.cover === 'roof') views.wide();
+    ruleFixes = []; enforce(true); track('package', { id }); rebuild(); ui.sync(); applyLightColor(performance.now() / 1000); if (state.cover === 'roof') views.wide();
   },
   change(key, v) {
     if (typeof v !== 'object') track('option', { key, value: String(v) });
-    if (key === 'model') { applyModel(v); rebuild(); views.orbit(); return; }
+    ruleFixes = [];
+    if (key === 'model') { applyModel(v); enforce(true); rebuild(); views.orbit(); return; }
     state[key] = v;
+    if ((key === 'steps' || key === 'cover') && enforce(true)) { rebuild(); ui.sync(); return; }
     if (key === 'coping') { swapStone(); saveHash(); invalidateAR(); ui.refresh(); }
     else if (key === 'deck' && swapStone()) { saveHash(); invalidateAR(); ui.refresh(); }
     else if (key === 'steps' || key === 'deck') rebuild();
@@ -621,7 +641,8 @@ const api = {
   },
   changeExtra(k, v) {
     track('option', { key: k, value: String(v) });
-    state.extras[k] = v;
+    state.extras[k] = v; ruleFixes = [];
+    if (v && (k === 'jet' || k === 'waterfall')) { if (enforce(true)) ui.sync(); }
     if (k === 'light') { applyLightColor(performance.now() / 1000); saveHash(); ui.refresh(); } else { rebuildExtras(); if (v && k === 'jet') { controls.autoRotate = false; views.flip(); } }
   },
   changeSize(k, v) { state.model = 'frei'; state[k] = v; if (k === 'length' && state.width > v - 0.5) state.width = Math.max(2, v - 0.5); if (k === 'width' && v > state.length - 0.5) state.length = Math.min(16, v + 0.5); scheduleRebuild(); },
@@ -785,5 +806,17 @@ async function bench(n = 25) {        // echte GPU-Zeit je Frame (Timer-Query, C
     else { const t0 = performance.now(); post.render(0); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); if (i >= 14) ts.push(performance.now() - t0); }
   }
   ts.sort((x, y) => x - y); return ts[n >> 1];
+}
+/* ?info: Selbstauskunft für Screenshots am Kundenrechner (Geräteklasse, Auflösung, Bildrate, Grafikchip, Browser) – nichts wird gesendet */
+if (params.has('info')) {
+  const box = document.createElement('pre'); box.setAttribute('role', 'status'); box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;margin:0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.72);color:#fff;font:11px/1.4 ui-monospace,Menlo,monospace;pointer-events:none;white-space:pre-wrap;max-width:92vw';
+  document.body.append(box);
+  let gpu = 'unbekannt'; try { const x = renderer.getContext().getExtension('WEBGL_debug_renderer_info'); if (x) gpu = renderer.getContext().getParameter(x.UNMASKED_RENDERER_WEBGL); } catch { /* egal */ }
+  let n = 0, t0 = performance.now(), worst = 0, last = t0;
+  const loop = (t) => { n++; worst = Math.max(worst, t - last); last = t; if (t - t0 >= 1000) {
+    const sz = renderer.getSize(new THREE.Vector2()), pr = renderer.getPixelRatio();
+    box.textContent = `${Math.round(n * 1000 / (t - t0))} fps · schlechtester Frame ${Math.round(worst)} ms\nKlasse ${gpuClass} · Stufe ${post.tier} · Auflösung ${Math.round(perf.scale * 100)} %\nBild ${Math.round(sz.x * pr)}×${Math.round(sz.y * pr)} px · Fenster ${innerWidth}×${innerHeight} @${devicePixelRatio}\nGPU ${gpu}\n${navigator.userAgent.slice(0, 110)}`; n = 0; worst = 0; t0 = t; }
+    requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
 }
 if (params.has('debug')) window.__app = { gpuClass, PROFILE, benchGPU: () => benchGPU(renderer), bench, THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api, mats, post, stage, perf, setScale, probe, createProbe, runProbe, applyTime, timeRes, setLamps, lampLights, buildPool, buildExtras, matSet };
