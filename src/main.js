@@ -17,6 +17,7 @@ import { initUI } from './ui.js';
 import { track, setSink } from './track.js';
 import { formHtml, readForm, scoreOf, inboxHtml, send as sendLead } from './lead.js';
 
+window.__booted = true;                                              // Hauptskript läuft (Wächter in index.html)
 const T0 = performance.now(), dbg = new URLSearchParams(location.search).has('debug'), tick = (l) => { if (dbg) console.info('[perf]', l, Math.round(performance.now() - T0), 'ms'); };
 const $ = (s) => document.querySelector(s);
 /* Lader: Anteil = Dateien (82 %) + Startschritte (18 %), nie rückwärts; Statuszeile nennt den aktuellen Schritt. Lange Rechenphasen geben dem Browser Zeit zum Zeichnen (wichtig auf Handys). */

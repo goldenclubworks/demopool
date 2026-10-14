@@ -185,13 +185,29 @@
   <div id="loading" role="status" aria-live="polite"><div class="ld"><div class="ld-title">Ihr 3D-Konfigurator wird vorbereitet</div><div class="ld-track"><i id="ld-bar"></i></div><div class="ld-row"><span id="ld-pct">0 %</span><small id="ld-status">Texturen, Himmel und Modelle werden geladen</small></div>
     <div id="ld-err" hidden><p></p><div class="row"><button class="solid" id="ld-reload">Neu laden</button><a class="btn ghost" id="ld-safe" href="#">Sicherheitsmodus</a></div></div><noscript>Bitte JavaScript aktivieren.</noscript></div></div>
   <script>
-    /* Wächter: zeigt Fehler und Hänger im Lader an (sonst bliebe der Bildschirm stumm, z. B. bei älteren Browsern oder Speichermangel auf dem Handy) */
+    /* Wächter für den Start. Zeigt NUR echte Startfehler (Hauptskript/Datei nicht ladbar, Absturz vor dem ersten Bild) und nennt Datei und Ursache.
+       Harmlose Fremdfehler (Browser-Erweiterungen, Brave/Safari-Schutzfunktionen: „Script error.“ ohne Datei) werden ignoriert. */
     (function () {
-      var $ = function (i) { return document.getElementById(i); };
-      function fail(msg) { var l = $('loading'), e = $('ld-err'); if (!l || !e || window.__started) return; e.hidden = false; e.querySelector('p').textContent = msg; $('ld-reload').onclick = function () { location.reload(); }; $('ld-safe').href = location.pathname + (location.search ? location.search + '&' : '?') + 'safe=1' + location.hash; }
-      window.addEventListener('error', function (ev) { if (/ResizeObserver/i.test(ev.message || '')) return; fail('Fehler beim Start: ' + (ev.message || 'unbekannt')); });
-      window.addEventListener('unhandledrejection', function (ev) { fail('Fehler beim Start: ' + ((ev.reason && ev.reason.message) || ev.reason || 'unbekannt')); });
-      setTimeout(function () { fail('Der Start dauert ungewöhnlich lange. Neu laden oder den Sicherheitsmodus (weniger Grafik) versuchen.'); }, 25000);
+      var $ = function (i) { return document.getElementById(i); }, failedFiles = [], shown = false;
+      function show(msg, detail) {
+        if (shown || window.__started) return; var e = $('ld-err'); if (!e) return; shown = true; e.hidden = false;
+        e.querySelector('p').textContent = msg + (detail ? ' [' + detail + ']' : '');
+        $('ld-reload').onclick = function () { var u = new URL(location.href); u.searchParams.set('r', Date.now()); location.replace(u.toString()); };        // mit neuem Parameter: umgeht einen veralteten Zwischenspeicher
+        $('ld-safe').href = location.pathname + (location.search ? location.search + '&' : '?') + 'safe=1' + location.hash;
+      }
+      // Dateien, die nicht geladen werden konnten (Skripte, Stylesheets): Capture-Phase, weil Ressourcenfehler nicht bis window sprudeln
+      window.addEventListener('error', function (ev) {
+        var t = ev.target;
+        if (t && t !== window && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) { failedFiles.push((t.src || t.href || '').split('/').pop()); show('Eine Programmdatei konnte nicht geladen werden (Netz oder Browser-Blocker?).', failedFiles.join(', ')); return; }
+        var m = ev.message || '', f = ev.filename || '';
+        if (!m || /^Script error\.?$/i.test(m) || /ResizeObserver/i.test(m) || (f && f.indexOf(location.origin) !== 0)) return;      // Fremdfehler ignorieren
+        window.__lastError = m + ' @' + f.split('/').pop() + ':' + ev.lineno; if (!window.__booted) show('Fehler beim Start.', window.__lastError);
+      }, true);
+      window.addEventListener('unhandledrejection', function (ev) {
+        var r = ev.reason, m = (r && r.message) || String(r || ''); if (/Importing a module script failed|Failed to fetch dynamically imported module|error loading dynamically imported module/i.test(m)) show('Eine Programmdatei konnte nicht geladen werden (Netz oder Browser-Blocker?).', m);
+      });
+      setTimeout(function () { if (!window.__booted) show('Das Programm wurde nicht gestartet (Hauptskript nicht geladen?).', window.__lastError || failedFiles.join(', ')); }, 15000);
+      setTimeout(function () { if (!window.__started) show('Der Start dauert ungewöhnlich lange. Neu laden oder den Sicherheitsmodus (weniger Grafik) versuchen.', window.__lastError || ''); }, 30000);
     })();
   </script>
   <script type="module" src="/src/main.js"></script>
