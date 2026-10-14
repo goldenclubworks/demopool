@@ -57,3 +57,25 @@ Chrome, Firefox, Safari-Engine (WebKit), iPhone 15, iPad Pro 11, Pixel 7: durchg
 - AO mit kleinem Radius/engem Abstandsbereich: große Radien erzeugten helle Schleier und dunkle Säume, wo Nahes vor Fernem steht.
 - Laubkarten: Farbe unter transparenten Pixeln auf Blattgrün gesetzt (Mipmaps mischten Schwarz in die Blattränder).
 - Grashalme: hellere Wurzeln; Himmel: Horizont-Dunst statt schwarzem Baumsaum.
+
+## Geräteklassen (Stand Oktober 2026)
+Beim Start misst ein kurzer Grafiktest (`src/devicebench.js`, ca. 0,1 s) 60 alphagetestete Texturschichten bei 0,6 Megapixel. Das Verhältnis zur Referenz (Apple M1 ≈ 4 ms) bestimmt die Klasse:
+
+| Klasse | Verhältnis | typische Geräte (Schätzung, nicht auf Geräten gemessen) | Pixelbudget | Laub (Hecke/Bäume) | Rasen | Schatten | Spiegelung | Start-Effekte |
+|---|---|---|---|---|---|---|---|---|
+| high | ≥ 0,45 | Laptops/Desktops, iPhone 13–15, aktuelle Spitzen-Androids | 4,6 MP (Handy 2,4 MP) | 100 % (Handy 70 %/65 %) | ja | 4096 (Handy 2048) | 256 (Handy 128) | AO + Glow |
+| mid | 0,16–0,45 | iPhone 11/12, Mittelklasse-Androids, ältere Laptops | 1,6 MP | 50 % / 45 % | 3.500 Halme | 2048 | 128 | AO + Glow |
+| low | < 0,16 | iPhone 8/X, schwache Androids, Software-Grafik | 0,9 MP | 30 % / 28 % (größere Karten, gleiche Deckung) | aus | 1024 | aus | ohne AO |
+
+Der Leistungsregler (siehe oben) korrigiert zur Laufzeit. Erzwingen zum Testen: `?class=high|mid|low`. **Die Schwellen sind aus Datenblättern abgeleitet und müssen auf echten Geräten bestätigt werden.**
+
+## Weitere Maßnahmen dieser Runde
+- **Hecke:** Karten nur noch auf der Innenseite und Oberseite (Außenseite/Enden sind für die Kamera im Grundstück unsichtbar) – ca. 40 % weniger Karten ohne sichtbare Änderung.
+- **Pflanzen-Modelle:** 7,1 → 3,0 MB (Geometrie quantisiert + Meshopt, Texturen WebP 92). Bildvergleich alt/neu: mittlere Abweichung < 0,7 von 255, bei Normalansicht < 0,07. Die große Topfpflanze (70.000 Dreiecke) hat ab 7 m Abstand eine Stufe mit 30 % der Dreiecke. Gartenpflanzen sind Instanzen (ein Zeichenaufruf je Teilmesh statt ~40 Klone). Reproduzierbar: `npm run assets`.
+- **AR:** ohne Topfpflanzen (vorher gerieten sie unbemerkt mit beiden Detailstufen in die Datei): GLB 3,5 → 1,0 MB, USDZ 9,6 → 2,6 MB.
+- **Preloader:** nur Tageshimmel und die gewählten Beläge; Abend/Nacht und übrige Beläge laden danach im Hintergrund, in Ruheschritten (nur wenn keine Eingabe läuft). Wird früh umgeschaltet: kurzer Hinweis, dann Wechsel; jeder Vorbereitungslauf ist dedupliziert (nie doppelt). Start ca. 9 MB statt 17 MB.
+- **Aufwärmen:** alle Beleuchtungszustände mit voller Ausstattung, alle Abdeckungen; ohne Sichtfeld-Ausschluss und mit allen LOD-Stufen gezeichnet, damit jede Shader-Variante vorab entsteht. Der erste Tageszeitwechsel kostet 24 statt 95 ms.
+- **Wasserspiegelung** wird auf mehrere Bilder verteilt (eine Würfelseite je Bild); das Wasser liegt auf Ebene 1 und muss nie ausgeblendet werden.
+- Rasenhalme werden einen Takt nach dem Umbau gebaut; Modellwechsel bleibt unter ca. 50 ms (ein Bild).
+- **Fehler behoben:** Preis/Link zeigten nach dem Aufwärmen kurz den Zustand mit allen Extras (Aufwärmen schreibt jetzt nichts mehr in Oberfläche und Link).
+- **Bildfehler:** Lichterkette (Kabel 1,3 cm statt 0,6 mm), Sichtschutz (unbeleuchtete Rückwand, matte Lamellen, dunkle Oberseiten gegen helle Striche), leere Zeichenfläche nach Größenänderung (sofortiges Neuzeichnen).

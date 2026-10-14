@@ -34,10 +34,10 @@ for (const [name, id] of Object.entries(TEX)) {
   for (const [key, suffix] of MAPS) await download(files[key]['1k'].jpg.url, path.join(root, 'textures', `${name}_${suffix}.jpg`));
 }
 
-/* Kleine Pflanzen-Modelle (glTF + Texturen, 1k) */
+/* Kleine Pflanzen-Modelle (Rohdaten, glTF + Texturen 1k) nach assets-src/ (wird nicht ausgeliefert); danach: node scripts/optimize-models.mjs */
 for (const id of ['potted_plant_04', 'potted_plant_02', 'celandine_01', 'grass_medium_02']) {
   const g = (await api(id)).gltf['1k'].gltf;
-  const dir = path.join(root, 'models', id);
+  const dir = path.join(root, '..', 'assets-src', 'models', id);
   await download(g.url, path.join(dir, `${id}.gltf`));
   for (const [rel, f] of Object.entries(g.include)) await download(f.url, path.join(dir, rel));
 }

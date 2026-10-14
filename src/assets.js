@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
 /* Fortschritt: alle Dateien laufen über einen Manager, der Preloader zeigt den Anteil in Prozent. Nur eigene Dateien, keine externen Server. */
 export const manager = new THREE.LoadingManager();
@@ -23,6 +24,7 @@ const FALLBACK = { grass: '#4a6a2a', decking: '#9c7650', sandstone: '#cbb89a', g
 function solid(color) { const c = document.createElement('canvas'); c.width = c.height = 4; const x = c.getContext('2d'); x.fillStyle = color; x.fillRect(0, 0, 4, 4); return c; }
 function tex(url, srgb, aniso, mpt, name, kind) {
   // Jede Verwendung bekommt ein eigenes Texture-Objekt (eigene Wiederholung); das Bild kommt aus dem Browser-Cache.
+  // Fehlt die Datei, tritt eine neutrale Farbfläche an die Stelle (nie Schwarz). Ein Material wird erst benutzt, wenn alle Bilder da sind (texturesReady).
   const t = texLoader.load(base + url, undefined, undefined, () => { t.image = solid(kind === 'nor' ? '#8080ff' : kind === 'rough' ? '#ffffff' : FALLBACK[name] || '#808080'); t.needsUpdate = true; });
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso; t.repeat.set(1 / mpt, 1 / mpt);
   t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -87,7 +89,10 @@ function findSun(t) {
 /* Pflanzen-Modelle laufen über denselben Manager: der Preloader wartet auf sie, nichts erscheint später „nachgeladen“. Fehlt ein Modell, wird es übersprungen. */
 const gltfCache = new Map();
 export function loadModel(id) {
-  if (!gltfCache.has(id)) gltfCache.set(id, new GLTFLoader(manager).loadAsync(`${base}models/${id}/${id}.gltf`).then((g) => g.scene).catch((e) => { console.warn('Modell fehlt:', id, e && e.message); return new THREE.Group(); }));
+  if (!gltfCache.has(id)) gltfCache.set(id, new GLTFLoader(manager).setMeshoptDecoder(MeshoptDecoder).loadAsync(`${base}models/${id}.glb`).then((g) => g.scene).catch((e) => { console.warn('Modell fehlt:', id, e && e.message); return new THREE.Group(); }));
   return gltfCache.get(id);
 }
 export const modelsReady = () => Promise.all([...gltfCache.values()]);
+
+/** true, wenn alle Texturen des Materials fertig geladen sind (sonst würde es schwarz erscheinen) */
+export const texturesReady = (m) => ['map', 'normalMap', 'roughnessMap'].every((k) => !m[k] || (m[k].image && (m[k].image.complete !== false) && (m[k].image.width || m[k].image.videoWidth)));

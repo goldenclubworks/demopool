@@ -40,10 +40,12 @@ export function leafCloud(count, place, mat, { seed = 1, tint = [0.78, 1.18], ca
 }
 
 /** Hecke als Quader: dunkler Kern + Blatt-Karten auf den Außenflächen. Quader mittig bei `c`, Maße (len × h × thick), um y gedreht. */
-export function hedge({ len, h, thick, center, rotY = 0 }, mat, core, density, seed) {
+export function hedge({ len, h, thick, center, rotY = 0, size = 0.34 }, mat, core, density, seed) {
   const g = new THREE.Group(), half = new THREE.Vector3(len / 2, h / 2, thick / 2);
   const coreMesh = new THREE.Mesh(new THREE.BoxGeometry(len - 0.15, h - 0.02, thick - 0.15), core); coreMesh.position.y = (h - 0.02) / 2; g.add(coreMesh);
-  const areas = [len * h, len * h, thick * h, thick * h, len * thick], total = areas.reduce((a, b) => a + b, 0);
+  // Die Kamera bleibt im Grundstück: sichtbar sind nur die Innenseite (zum Garten) und die Oberseite. Außenseite und Enden bekommen keine Karten (unsichtbar, kosteten aber Rechenzeit).
+  const dirW = new THREE.Vector3(Math.sin(rotY), 0, Math.cos(rotY)), inner = dirW.dot(center.clone().setY(0).negate()) >= 0 ? 1 : 0;      // welche lange Seite zeigt zur Mitte? (lokal +z bzw. -z)
+  const areas = [inner ? 0 : len * h, inner ? len * h : 0, 0, 0, len * thick], total = areas.reduce((a, b) => a + b, 0);
   const count = Math.round(total * density);
   const cloud = leafCloud(count, (i, R) => {
     let r = R() * total, f = 0; while (r > areas[f]) { r -= areas[f]; f++; }
@@ -52,14 +54,14 @@ export function hedge({ len, h, thick, center, rotY = 0 }, mat, core, density, s
     else if (f < 4) { const s = f === 3 ? 1 : -1; pos.set(s * half.x, (w * 0.5 + 0.5) * h, u * half.z); out.set(s, 0.15, 0); }
     else { pos.set(u * half.x, h, w * half.z); out.set(0, 1, 0); }
     pos.addScaledVector(out, R() * 0.1);
-    return { pos, out: out.normalize(), size: 0.34 };
+    return { pos, out: out.normalize(), size };
   }, mat, { seed, tint: [0.7, 1.15] });
   g.add(cloud); g.position.copy(center); g.rotation.y = rotY;
   return g;
 }
 
 /** Laubbaum: Stamm mit Rinde, Äste, Krone aus mehreren Blatt-Wolken. */
-export function tree({ height = 5, spread = 2.4, seed = 1, mats, density = 1 }) {
+export function tree({ height = 5, spread = 2.4, seed = 1, mats, density = 1, size = 0.72 }) {
   const R = rng(seed), g = new THREE.Group(), trunkH = height * 0.42;
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * height / 5, 0.2 * height / 5, trunkH + 0.4, 10, 4), mats.bark); trunk.position.y = (trunkH + 0.4) / 2 - 0.05; trunk.castShadow = true; g.add(trunk);
   const lobes = 5 + Math.floor(R() * 3), cards = [];
@@ -76,7 +78,7 @@ export function tree({ height = 5, spread = 2.4, seed = 1, mats, density = 1 }) 
   const per = Math.round(1900 * density), total = per * lobes;
   const cloud = leafCloud(total, (i) => {
     const L = cards[i % lobes], o = new THREE.Vector3(R() - 0.5, (R() - 0.5) * 0.8, R() - 0.5).normalize();
-    return { pos: L.c.clone().addScaledVector(o, L.r * (0.88 + R() * 0.22)).setY(L.c.y + o.y * L.r * 0.82 + (L.c.y - L.c.y)), out: o.clone().setY(o.y * 0.8 + 0.2).normalize(), size: 0.72 };
+    return { pos: L.c.clone().addScaledVector(o, L.r * (0.88 + R() * 0.22)).setY(L.c.y + o.y * L.r * 0.82 + (L.c.y - L.c.y)), out: o.clone().setY(o.y * 0.8 + 0.2).normalize(), size };
   }, mats.leaf, { seed: seed + 9, cast: true, tint: [0.62, 1.22] });
   g.add(cloud);
   return g;

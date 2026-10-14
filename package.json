@@ -7,7 +7,7 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
-    "assets": "node scripts/fetch-assets.mjs",
+    "assets": "node scripts/fetch-assets.mjs && node scripts/optimize-models.mjs",
     "test": "vitest run",
     "check:render": "node scripts/render-check.mjs"
   },
@@ -21,7 +21,12 @@
     "vite": "^8.3.3"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "meshoptimizer": "^1.3.0",
     "playwright-core": "^1.64.0",
+    "sharp": "^0.35.5",
     "vitest": "^5.0.4"
   }
 }

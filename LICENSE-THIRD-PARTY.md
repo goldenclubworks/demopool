@@ -27,4 +27,4 @@ Quelle: Poly Haven. Erneuern mit `npm run assets` (siehe `scripts/fetch-assets.m
 | `public/hdri/evening.hdr` | Grasslands Sunset (1k) |
 | `public/hdri/night.hdr` | Moonlit Golf (1k) |
 
-Mosaikfliesen, Wasser, Laub, Hecken und Bäume werden zur Laufzeit prozedural erzeugt. Es werden keine fremden Logos oder Marken verwendet.
+Die Pflanzen-Modelle werden mit `scripts/optimize-models.mjs` verkleinert (Geometrie-Kompression, WebP); Werkzeuge: glTF-Transform (MIT), meshoptimizer (MIT), sharp (Apache-2.0). Mosaikfliesen, Wasser, Laub, Hecken und Bäume werden zur Laufzeit prozedural erzeugt. Es werden keine fremden Logos oder Marken verwendet.

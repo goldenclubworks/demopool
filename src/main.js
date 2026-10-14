@@ -7,7 +7,8 @@ import { USDZExporter } from 'three/addons/exporters/USDZExporter.js';
 import { createMaterials } from './materials.js';
 import { createPost } from './post.js';
 import { createProbe } from './probe.js';
-import { loadHDRI, onProgress, whenLoaded, modelsReady } from './assets.js';
+import { benchGPU, classify } from './devicebench.js';
+import { loadHDRI, onProgress, whenLoaded, modelsReady, texturesReady } from './assets.js';
 import { buildPool, groundGeometry, patchGeometry } from './pool.js';
 import { buildExtras } from './extras.js';
 import { buildGarden } from './garden.js';
@@ -98,11 +99,12 @@ function applyCfg(c) {
 try { const m = location.hash.match(/cfg=([\w-]+)/); if (m) applyCfg(JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g, '+').replace(/_/g, '/')))))); } catch { /* ungültiger Link */ }
 if (params.has('frei') && state.model !== 'frei') state.model = 'frei';
 let hashT = 0;
-const saveHash = () => { clearTimeout(hashT); hashT = setTimeout(writeHash, 250); };
+let warming = false;                                                // Aufwärmen: Zwischenzustände nie in Link oder Oberfläche schreiben
+const saveHash = () => { if (warming) return; clearTimeout(hashT); hashT = setTimeout(writeHash, 250); };
 const writeHash = () => { try { history.replaceState(null, '', '#cfg=' + btoa(unescape(encodeURIComponent(JSON.stringify(state)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')); } catch { /* egal */ } };
 
 /* ---------- Renderer / Szene ---------- */
-const tier0 = ['high', 'medium', 'low'].includes(params.get('q')) ? params.get('q') : safe ? 'medium' : 'high';          // immer die höchste Stufe; reicht die Leistung nicht, sinkt zuerst nur die Auflösung (siehe Leistungsregler)
+let tier0 = 'high';
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, powerPreference: 'high-performance' }); }
 catch (e) { $('#loading').innerHTML = 'Die 3D-Ansicht wird von diesem Gerät oder Browser nicht unterstützt.<br>Bitte einen aktuellen Browser (Safari, Chrome, Firefox, Edge) verwenden.'; throw e; }
@@ -111,7 +113,18 @@ canvas.addEventListener('webglcontextlost', (e) => {                // z. B. Spe
   if (!safe) { const u = new URL(location.href); u.searchParams.set('safe', '1'); toast('Die Grafik wurde unterbrochen – Sicherheitsmodus wird geladen …'); setTimeout(() => location.replace(u), 1200); }
   else toast('Die Grafik wurde unterbrochen – bitte Seite neu laden');
 });
-const NATIVE = Math.max(1, Math.min(devicePixelRatio, safe ? 1.25 : isMobile ? 2 : 3, Math.sqrt((safe ? 1.2e6 : isMobile ? 2.4e6 : 4.6e6) / (innerWidth * innerHeight))));   // volle Pixeldichte; Handys/Tablets max. 2× und 2,4 MP (Speicher), Desktop 4,6 MP
+/* Geräteklasse: kurzer Grafiktest (siehe devicebench.js). high = schneller Laptop/aktuelles Spitzenhandy, mid = gutes Mittelklassegerät/ältere iPhones, low = schwach/alt.
+   Die Klasse bestimmt Pixelbudget, Laubdichte, Schattenauflösung und Start-Effektstufe; der Leistungsregler korrigiert zur Laufzeit (zuerst nur die Auflösung). Immer das Beste, was das Gerät bei 60 fps schafft. */
+const bench0 = safe ? null : benchGPU(renderer);
+const gpuClass = ['high', 'mid', 'low'].includes(params.get('class')) ? params.get('class') : safe ? 'low' : classify(bench0.ratio);
+const PROFILE = {
+  high: { mp: isMobile ? 2.4 : 4.6, dpr: isMobile ? 2 : 3, hedge: isMobile ? 0.7 : 1, tree: isMobile ? 0.65 : 1, lawn: isMobile ? 7000 : 15000, shadow: isMobile ? 2048 : 4096, probe: isMobile ? 128 : 256, tier: 'high' },
+  mid: { mp: 1.6, dpr: 2, hedge: 0.5, tree: 0.45, lawn: 3500, shadow: 2048, probe: 128, tier: 'high' },
+  low: { mp: 0.9, dpr: 1.5, hedge: 0.3, tree: 0.28, lawn: 0, shadow: 1024, probe: 0, tier: 'medium' },
+}[gpuClass];
+tier0 = ['high', 'medium', 'low'].includes(params.get('q')) ? params.get('q') : PROFILE.tier;
+tick('Geräteklasse ' + gpuClass + (bench0 ? ' (Test ' + bench0.ms.toFixed(1) + ' ms, Verhältnis ' + bench0.ratio.toFixed(2) + ')' : ''));
+const NATIVE = Math.max(1, Math.min(devicePixelRatio, PROFILE.dpr, Math.sqrt((PROFILE.mp * 1e6) / (innerWidth * innerHeight))));      // volle Pixeldichte im Budget der Klasse
 const SCALES = [1, 0.9, 0.8, 0.72, 0.65, 0.58, 0.52];                                                      // Stufen der dynamischen Auflösung
 const perf = { tierUpAt: 0, scale: [...SCALES].reverse().find((v) => v >= (+params.get('scale') || 1) - 1e-6) || 1, good: 0, last: 0, noUpUntil: 0, raisedAt: 0 };
 let dpr = NATIVE * perf.scale;
@@ -120,7 +133,7 @@ renderer.toneMapping = THREE.NoToneMapping;                         // Tone-Mapp
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false;
 const scene = new THREE.Scene();
 const stage = new THREE.Group(); scene.add(stage);                 // alles, was zum Becken gehört (verschiebbar im Foto-Modus)
-const camera = new THREE.PerspectiveCamera(38, 1, 0.2, 700);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.2, 700); camera.layers.enable(1);
 const post = createPost(renderer, scene, camera, tier0);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.08; controls.minDistance = 2.5; controls.maxDistance = 42; controls.minPolarAngle = 0.1; controls.maxPolarAngle = 1.46; controls.enablePan = false;
@@ -131,53 +144,87 @@ let shadowDirty = true;
 /* Himmel (Foto-HDRI als Kulisse und Beleuchtung), Sonne */
 const pmrem = new THREE.PMREMGenerator(renderer);
 const sun = new THREE.DirectionalLight(0xffeedd, 3); sun.castShadow = true; scene.add(sun, sun.target);
-sun.shadow.intensity = 0.9; sun.shadow.mapSize.set(safe ? 1024 : isMobile ? 2048 : 4096, safe ? 1024 : isMobile ? 2048 : 4096); sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
+sun.shadow.intensity = 0.9; sun.shadow.mapSize.set(PROFILE.shadow, PROFILE.shadow); sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
 // az: gewünschte Himmelsrichtung der Sonne (Grad, in der x-z-Ebene), damit Wasser und Becken von der Kamerarichtung aus schön beleuchtet sind
 const TIME = {
   day: { hdri: 'day', fog: 0.0062, grass: 0.8, az: 205, exp: 0.95, env: 0.95, sun: 2.5, bg: 1, lamp: 0, caus: 1, light: 1 },
   evening: { hdri: 'evening', fog: 0.0075, grass: 0.8, az: 215, exp: 0.8, env: 0.85, sun: 2.2, bg: 1, lamp: 0.55, caus: 0.45, light: 0.45 },
   night: { hdri: 'night', fog: 0.007, grass: 0.8, az: 150, exp: 1.15, env: 0.55, sun: 0.55, sunCol: 0x9db4ff, bg: 1, lamp: 1, caus: 0.25, light: 0.07 },
 };
-let skybox = null, envToken = 0;
-const envRT = {}, skyCache = {};
-async function setTime(key) {
-  const t = TIME[key], token = ++envToken, h = await loadHDRI(t.hdri);
-  if (token !== envToken) return;
-  if (!started) await paint();
-  const rot = Math.atan2(h.sun.dir.z, h.sun.dir.x) - THREE.MathUtils.degToRad(t.az);          // Drehung der Kulisse um y, damit die Sonne bei az steht
-  const dir = h.sun.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
-  sun.position.copy(dir).multiplyScalar(60);
-  sun.intensity = t.sun; sun.color.copy(t.sunCol ? tmpC.set(t.sunCol) : h.sun.color).lerp(new THREE.Color(1, 1, 1), t === TIME.day ? 0.25 : 0);
-  if (!envRT[key]) envRT[key] = pmrem.fromEquirectangular(h.texture);
-  scene.environment = envRT[key].texture; scene.environmentIntensity = t.env; scene.environmentRotation.set(0, rot, 0);
-  if (skybox) scene.remove(skybox);
-  if (skyCache[key]) { skybox = skyCache[key]; skybox.rotation.y = -rot; scene.add(skybox); } else {
-  skybox = new GroundedSkybox(h.texture, 3, 320);
-  skybox.material.onBeforeCompile = (sh) => {
+let skybox = null, envToken = 0, curTime = 'day';
+const timeRes = {}, timeJobs = {};                  // je Tageszeit: fertig vorbereitete Teile (Himmel, Umgebungslicht, Kulisse) bzw. laufende Vorbereitung (nie doppelt)
+/** wartet auf einen ruhigen Moment (keine Eingabe, keine Kamerafahrt, Tab sichtbar): schwere Schritte laufen dann nie mitten in der Bedienung */
+const idleStep = () => new Promise((res) => { const go = () => { if (document.hidden || tween || performance.now() - lastActive < 700) return setTimeout(go, 250); if (window.requestIdleCallback) requestIdleCallback(() => res(), { timeout: 1500 }); else setTimeout(res, 40); }; go(); });
+function makeSky(h, t, rot) {
+  const sky = new GroundedSkybox(h.texture, 3, 320);
+  sky.material.onBeforeCompile = (sh) => {
     // weich (Mip-Bias) und der Boden der Kulisse wird zur Rasenfarbe gezogen, damit der Übergang vom Rasen nahtlos ist
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vLY; varying float vEl;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLY = position.y; vEl = normalize(position).y;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLY; varying float vEl; uniform vec3 uHaze;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLY; varying float vEl; uniform vec3 uHaze; uniform float uGrass;')
       .replace('#include <map_fragment>', `vec4 sampledDiffuseColor = texture2D( map, vMapUv, 1.5 ); diffuseColor *= sampledDiffuseColor;
       float gm = smoothstep(0.0, -1.5, vLY); float gl = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
-      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.42, 0.18) * gl * ${t.grass.toFixed(2)}, gm);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.30, 0.42, 0.18) * gl * uGrass, gm);
       // Dunst am Horizont: der dunkle Baumsaum des Panoramas geht weich in Horizontfarbe über (kein schwarzes Band)
       diffuseColor.rgb = mix(diffuseColor.rgb, uHaze, 0.62 * (1.0 - smoothstep(0.0, 0.1, abs(vEl))));`);
-    sh.uniforms.uHaze = { value: h.sun.horizon.clone().multiplyScalar(t.bg * 0.8) };
+    sh.uniforms.uHaze = { value: h.sun.horizon.clone().multiplyScalar(t.bg * 0.8) }; sh.uniforms.uGrass = { value: t.grass };
   };
-  skybox.material.fog = false; skybox.material.color.setScalar(t.bg); skybox.material.depthWrite = false; skybox.renderOrder = 1000; skybox.frustumCulled = false; skybox.rotation.y = -rot; skybox.position.y = 3 - 2.7; scene.add(skybox); skyCache[key] = skybox; }
+  sky.material.fog = false; sky.material.color.setScalar(t.bg); sky.material.depthWrite = false; sky.renderOrder = 1000; sky.frustumCulled = false; sky.rotation.y = -rot; sky.position.y = 3 - 2.7;
+  return sky;
+}
+/** Bereitet eine Tageszeit vor (Datei laden, Textur hochladen, Umgebungslicht berechnen, Kulisse bauen). slow = in Ruheschritten, ohne die Bedienung zu stören. Mehrfachaufrufe teilen sich denselben Lauf. */
+function prepareTime(key, slow = false) {
+  if (timeRes[key]) return Promise.resolve(timeRes[key]);
+  if (timeJobs[key]) return timeJobs[key];
+  const gap = slow ? idleStep : () => Promise.resolve();
+  return (timeJobs[key] = (async () => {
+    const t = TIME[key], h = await loadHDRI(t.hdri); await gap();
+    const rot = Math.atan2(h.sun.dir.z, h.sun.dir.x) - THREE.MathUtils.degToRad(t.az);        // Drehung der Kulisse um y, damit die Sonne bei az steht
+    const dir = h.sun.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+    renderer.initTexture(h.texture); await gap();                                               // Himmel-Textur jetzt hochladen, nicht beim Umschalten
+    const env = pmrem.fromEquirectangular(h.texture); await gap();
+    const sky = makeSky(h, t, rot);
+    return (timeRes[key] = { h, t, rot, dir, env, sky });
+  })().finally(() => { delete timeJobs[key]; }));
+}
+function applyTime(key) {
+  const { h, t, rot, dir, env, sky } = timeRes[key]; curTime = key;
+  sun.position.copy(dir).multiplyScalar(60);
+  sun.intensity = t.sun; sun.color.copy(t.sunCol ? tmpC.set(t.sunCol) : h.sun.color).lerp(new THREE.Color(1, 1, 1), key === 'day' ? 0.25 : 0);
+  scene.environment = env.texture; scene.environmentIntensity = t.env; scene.environmentRotation.set(0, rot, 0);
+  if (skybox !== sky) { if (skybox) scene.remove(skybox); skybox = sky; scene.add(skybox); }
   scene.fog = new THREE.FogExp2(h.sun.horizon.clone().multiplyScalar(t.bg * 0.92), t.fog); post.setExposure(t.exp); U.uCaus.value = t.caus; U.uLight.value = t.light; U.uSunCol.value.copy(sun.color);
   setLamps(t.lamp); post.setGlow(t.lamp > 0 || params.has('glow'));
-  if (probeCache[key]) { mats.water.envMap = probeCache[key]; }          // Spiegelung je Tageszeit vorberechnet: Umschalten kostet nichts
+  if (probeCache[key]) mats.water.envMap = probeCache[key].texture; else scheduleProbe();       // Spiegelung je Tageszeit zwischengespeichert: Umschalten kostet nichts
   shadowDirty = true;
   if (window.__app) window.__app.sunDir = dir;
 }
+async function setTime(key) {
+  const token = ++envToken;
+  if (!timeRes[key]) {                                  // noch nicht vorbereitet (z. B. früh „Abend“ gewählt): Hinweis, dann umschalten, sobald fertig
+    const hint = started ? setTimeout(() => toast('Tageszeit wird vorbereitet …'), 350) : 0;
+    try { await prepareTime(key); } finally { clearTimeout(hint); }
+  }
+  if (token !== envToken) return;
+  if (!started) await paint();
+  applyTime(key);
+}
+/** Nach dem ersten Bild: die übrigen Tageszeiten in Ruheschritten vorbereiten (Hintergrund, kein Ruckeln) */
+/** Übrige Belag-Texturen im Hintergrund laden und in Ruheschritten auf die Grafikkarte legen (Umschalten später ohne Warten und ohne Ruckeln) */
+async function prefetchStone() {
+  const all = [...Object.values(copingMats), ...Object.values(deckMats)];
+  all.forEach(ensure);
+  try { await whenLoaded(30000); } catch { /* egal */ }
+  for (const m of all) for (const k of ['map', 'normalMap', 'roughnessMap']) if (m[k] && m[k].image && m[k].image.width) { renderer.initTexture(m[k]); await idleStep(); }
+}
+async function prepareOthers() { for (const k of Object.keys(TIME)) if (k !== curTime) { try { await prepareTime(k, true); } catch (e) { console.warn('Tageszeit', k, e); } }
+  await prefetchStone(); }
 
 /* ---------- Materialien ---------- */
 const aniso = Math.min(isMobile ? 4 : 16, renderer.capabilities.getMaxAnisotropy());
 tick('renderer+post');
 const { mats, U, copingMats, deckMats, ground: groundMat, ensure, prefetch } = createMaterials({ aniso, isMobile });
 tick('materials+texturen'); ld.stage("Szene wird aufgebaut …", 0.2); await paint();
-prefetch();                                   // alle Belag-Texturen gleich mit laden (Preloader), damit ein Wechsel später sofort sitzt
+ensure(copingMats[state.coping] || copingMats.stein); ensure(deckMats[state.deck] || deckMats.stein);       // nur die gewählten Beläge im Preloader; die übrigen laden danach im Hintergrund (prefetchStone)
 function applyLiner() {
   const h = LINERS[state.liner].hex;
   mats.liner.color.setHex(h); mats.waterAR.color.setHex(h);
@@ -192,16 +239,19 @@ const patch = new THREE.Mesh(new THREE.BufferGeometry(), groundMat); patch.name 
 
 /* ---------- Pool, Zubehör, Garten ---------- */
 let pool = null, extras = null, garden = null, before = false;
-const probe = createProbe(renderer, scene, isMobile || safe ? 128 : 256); let probeT = 0, probeOn = false; const probeCache = {};
+const probe = createProbe(renderer, scene, Math.max(64, PROFILE.probe)); let probeT = 0, probeOn = false; const probeCache = {};
 /** Wasserspiegelung der Umgebung neu aufnehmen – erst, wenn 0,7 s nichts geändert wurde (kein Ruckeln bei der Bedienung) */
-function scheduleProbe() {
-  clearTimeout(probeT);
-  probeT = setTimeout(() => {
-    if (!pool || photo.on || lite || safe || post.tier === 'low') return;
-    const w = pool.group.getObjectByName('wasser'); mats.water.envMap = probe.update([w, occluder, shadowCatcher].filter(Boolean));
-    if (!probeOn) { probeOn = true; mats.water.needsUpdate = true; }
-  }, 700);
+function finishProbe(rt) {
+  const old = probeCache[curTime]; probeCache[curTime] = rt; mats.water.envMap = rt.texture; if (old) old.dispose();
+  if (!probeOn) { probeOn = true; mats.water.needsUpdate = true; }
 }
+/** sofort (nur Start): alles auf einmal */
+function runProbe() { if (!pool || photo.on || lite || safe || !PROFILE.probe || post.tier === 'low') return; finishProbe(probe.updateNow()); }
+/** im Betrieb: eine Würfelseite je Bild, danach die Umrechnung (siehe Schleife) */
+function startProbe() { if (!pool || photo.on || lite || safe || !PROFILE.probe || post.tier === 'low') return; probe.begin(); }
+function scheduleProbe() { clearTimeout(probeT); probe.abort(); probeT = setTimeout(startProbe, 700); }
+/** Bei Änderungen am Garten/Zubehör sind die Spiegelungen der anderen Tageszeiten veraltet: verwerfen, bei Bedarf neu aufnehmen */
+function invalidateProbes() { for (const k of Object.keys(probeCache)) if (k !== curTime) { probeCache[k].dispose(); delete probeCache[k]; } }
 const lampLights = [];
 for (let i = 0; i < (isMobile ? 2 : 4); i++) { const l = new THREE.PointLight(0x9fe3ff, 0, 5.5, 2); l.visible = false; stage.add(l); lampLights.push(l); }
 let lampLevel = 0;
@@ -218,18 +268,25 @@ function setLamps(level) {
   if (garden) garden.setNight(level);
   applyLightColor(performance.now() / 1000);
 }
-const matSet = () => { const c = copingMats[state.coping] || copingMats.stein, d = deckMats[state.deck] || deckMats.stein; ensure(c); ensure(d); return { ...mats, coping: c, deck: d }; };
+const matSet = () => {
+  let c = copingMats[state.coping] || copingMats.stein, d = deckMats[state.deck] || deckMats.stein; ensure(c); ensure(d);
+  // Bilder noch unterwegs (Auswahl direkt nach dem Start): bis dahin das bisherige Material, sonst erschiene die Fläche schwarz; swapStone tauscht danach
+  if (pool) { if (!texturesReady(c)) { const cur = pool.group.getObjectByName('rand'); c = cur ? cur.material : copingMats.stein; whenLoaded(8000).then(() => pool && swapStone()); } if (!texturesReady(d)) { const cur = pool.group.getObjectByName('terrasse'); d = cur ? cur.material : deckMats.holz; whenLoaded(8000).then(() => pool && swapStone()); } }
+  return { ...mats, coping: c, deck: d };
+};
 function buildExtrasNow() {
   if (extras) { stage.remove(extras.group); extras.dispose(); }
   extras = buildExtras(state, pool, mats, 'scene'); extras.group.visible = !before; stage.add(extras.group);
 }
-function rebuildExtras() { buildExtrasNow(); scheduleProbe(); shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh(); }
+function rebuildExtras() { buildExtrasNow(); invalidateProbes(); scheduleProbe(); shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh(); }
 /** Rand/Terrasse umstellen, ohne die Geometrie neu zu bauen (nur Material); false = Umbau nötig (z. B. von/zu „Rasen“) */
 function swapStone() {
   const rand = pool.group.getObjectByName('rand'), terr = pool.group.getObjectByName('terrasse');
   const c = copingMats[state.coping] || copingMats.stein, d = deckMats[state.deck];
   if ((state.deck === 'gras') !== !terr || !rand) return false;
-  ensure(c); rand.material = c; if (terr) { ensure(d); terr.material = d; }
+  ensure(c); if (terr) ensure(d);
+  if (!texturesReady(c) || (terr && !texturesReady(d))) { whenLoaded(8000).then(() => { if (pool && pool.group.getObjectByName('rand')) swapStone(); }); return true; }       // Bilder noch unterwegs: altes Material bleibt, dann Wechsel (kein schwarzes Aufblitzen)
+  rand.material = c; if (terr) terr.material = d;
   shadowDirty = true; return true;
 }
 function rebuild() {
@@ -237,12 +294,13 @@ function rebuild() {
   pool = buildPool(state, matSet(), 'scene');
   pool.group.traverse((o) => { if (o.isMesh && o.name === 'terrasse') o.receiveShadow = true; });
   pool.group.visible = !before; stage.add(pool.group);
+  { const w = pool.group.getObjectByName('wasser'); if (w) w.layers.set(1); }                  // Ebene 1: Hauptkamera sieht es, die Spiegelungs-Kameras nicht
   ground.geometry.dispose(); ground.geometry = groundGeometry(pool.contour, 170, 1);
   if (typeof photo !== 'undefined' && photo.on) { occluder.geometry = shadowCatcher.geometry = ground.geometry; }
   patch.geometry.dispose(); patch.geometry = patchGeometry(pool.contour);
   if (!garden) {                                                  // Hecke, Bäume, Beete: einmal für die größte Terrasse gebaut – Modellwechsel baut sie nicht neu
     const free = state.model === 'frei' || params.has('frei'), L = Math.max(free ? 16 : 0, state.length, ...MODELS.map((m) => m.length)), W = Math.max(free ? 6.5 : 0, state.width, ...MODELS.map((m) => m.width));
-    garden = buildGarden({ minX: -L / 2, maxX: L / 2, minZ: -W / 2, maxZ: W / 2 }, { isMobile, noLawn: safe, dens: safe ? 0.3 : undefined }); stage.add(garden.group);
+    garden = buildGarden({ minX: -L / 2, maxX: L / 2, minZ: -W / 2, maxZ: W / 2 }, { isMobile, lawn: PROFILE.lawn, hedge: PROFILE.hedge, tree: PROFILE.tree }); stage.add(garden.group);
   }
   garden.fit(pool.bounds);
   garden.group.visible = state.garden;
@@ -252,7 +310,7 @@ function rebuild() {
   setLamps(lampLevel);
   const ext = Math.max(pool.dims.length, pool.dims.width) / 2 + 9, sc = sun.shadow.camera;
   sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = 200; sc.updateProjectionMatrix();
-  shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh(); scheduleProbe(); warm = Math.max(warm, 40);
+  shadowDirty = true; invalidateAR(); saveHash(); ui && ui.refresh(); invalidateProbes(); scheduleProbe(); warm = Math.max(warm, 40);
 }
 let pending = false;
 const scheduleRebuild = () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; rebuild(); }); };
@@ -636,6 +694,7 @@ function resize() {
   if (w === lastW && h === lastH && dpr === lastDpr) { layout(true); return; }
   lastW = w; lastH = h; lastDpr = dpr;
   renderer.setPixelRatio(dpr); post.setSize(w, h); post.setAA(dpr < 1.75); camera.aspect = w / h; layout(true);
+  if (started) post.render(0);               // sofort neu zeichnen: eine Größenänderung leert die Zeichenfläche, bis zum nächsten Bild würde sonst Schwarz/Hintergrund aufblitzen (z. B. wenn iOS die Adressleiste ein-/ausblendet)
 }
 let lastW = 0, lastH = 0, lastDpr = 0, rsT = 0;
 addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(resize, 120); });   // Adressleisten-Ein-/Ausblenden löst viele resize-Ereignisse aus
@@ -671,39 +730,42 @@ renderer.setAnimationLoop(() => {
   if (extras) extras.update(clock);
   if (lampLevel > 0 && state.extras.light === 'wechsel') applyLightColor(clock);
   if (shadowDirty) { renderer.shadowMap.needsUpdate = true; shadowDirty = false; }
+  if (probe.busy) { const rt = probe.step(); if (rt) finishProbe(rt); }       // Spiegelung: ein kleiner Schritt je Bild
   post.render(dt);
-  if (!started && assetsDone) { started = true; window.__started = true; ld.done(); tick('erstes Bild nach Preloader'); $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); }
+  if (!started && assetsDone) { started = true; window.__started = true; ld.done(); tick('erstes Bild nach Preloader'); $('#loading').classList.add('done'); setTimeout(() => $('#loading').remove(), 800); setTimeout(prepareOthers, 1500); }
   if (ar.building || params.has('fixed')) return;
   if (warm > 0) { warm--; return; }
   if (idle || document.hidden) { samples.length = 0; return; }       // Leerlauf (30 fps) und Hintergrund-Tab sagen nichts über die Leistung
   samples.push(dt); if (samples.length >= 30) { samples.sort((x, y) => x - y); perfStep(samples[15] * 1000); samples.length = 0; }       // Median: einzelne Ruckler (Speicherbereinigung, Seitenwechsel) lösen nichts aus
 });
 
-/** Alle Tageszeiten vorab berechnen (Himmel, Umgebungslicht, Kulisse): der spätere Wechsel ist ein reines Umschalten ohne Laden oder Ruckeln */
-async function prepareTimes() {
-  const cur = state.time;
-  const snap = () => { if (safe || photo.on) return; const w = pool.group.getObjectByName('wasser'); return probe.update([w, occluder, shadowCatcher].filter(Boolean), true); };
-  for (const key of Object.keys(TIME)) { await setTime(key); post.render(0); await paint(); const p = snap(); if (p) probeCache[key] = p; await paint(); }       // einmal zeichnen (Himmel-Textur hochladen) und Wasserspiegelung je Zeit aufnehmen
-  await setTime(cur); post.render(0);
-}
 /** Shader und Pipelines vorab erzeugen (jede Kombination einmal zeichnen), damit später nichts „nachlädt“ oder ruckelt */
 async function warmup() {
+  warming = true; const uiRefresh = ui.refresh; ui.refresh = () => {};
+  const settle = async () => { await modelsReady(); await new Promise((r) => setTimeout(r, 0)); };            // Pflanzen hängen asynchron an der Szene: erst abwarten, dann zeichnen
+  // Alles zeichnen, unabhängig vom Bildausschnitt: Sichtfeld-Ausschluss aus, alle LOD-Stufen sichtbar. So entstehen auch die Varianten (Shader, Texturen) von Teilen, die im Startbild nicht im Blick sind.
+  const all = (on) => scene.traverse((o) => { if (on) { o.userData.__fc = o.frustumCulled; o.frustumCulled = false; if (o.isLOD) { o.autoUpdate = false; o.levels.forEach((l) => { l.object.visible = true; }); } } else { if ('__fc' in o.userData) { o.frustumCulled = o.userData.__fc; delete o.userData.__fc; } if (o.isLOD) o.autoUpdate = true; } });
+  const draw = async (lamps) => { setLamps(lamps); all(true); post.render(0); all(false); await new Promise((r) => setTimeout(r, 0)); };
   try {
-    await Promise.race([renderer.compileAsync(scene, camera), new Promise((r) => setTimeout(r, 4000))]);
     const t0 = state.time, g0 = post.glowOn, aa0 = post.aa;
-    post.setGlow(true); post.setAA(false); post.render(0); post.setAA(true); post.render(0);      // Glow und Kantenglättung
-    if (!lite) { setLamps(1); post.render(0); }                                                    // Lampen (Nachtlicht ändert die Shader)
-    setLamps(TIME[t0].lamp); post.setGlow(g0); post.setAA(aa0); post.render(0);
-    // jede Abdeckung, jeden Belag, jedes Zubehör einmal zeichnen (Textur-Upload, Shader): später kein Ruckeln beim ersten Umschalten
-    const cov0 = state.cover, c0 = state.coping, d0 = state.deck;
-    for (const c of Object.keys(COVER)) { pool.setCover(c); post.render(0); } pool.setCover(cov0);
-    for (const k of Object.keys(COPING)) { state.coping = k; swapStone(); post.render(0); }
-    for (const k of Object.keys(DECK)) { state.deck = k; if (!swapStone()) { rebuild(); } post.render(0); }
-    state.coping = c0; state.deck = d0; if (!swapStone()) rebuild();
+    // 1) volle Ausstattung (alle Extras, 4 Liegen) in allen Beleuchtungszuständen: Shader und Texturen aller Teile mit/ohne Lampenlicht
     const ex0 = JSON.stringify(state.extras); for (const k of Object.keys(EXTRAS)) state.extras[k] = true; state.extras.loungers = 4;
-    buildExtrasNow(); post.render(0); Object.assign(state.extras, JSON.parse(ex0)); buildExtrasNow(); post.render(0);
-    if (!safe) { const w = pool.group.getObjectByName('wasser'); mats.water.envMap = probe.update([w, occluder, shadowCatcher].filter(Boolean)); probeOn = true; mats.water.needsUpdate = true; post.render(0); }
+    buildExtrasNow(); await settle();
+    post.setGlow(true); post.setAA(false); await draw(0); await draw(1); post.setAA(true); await draw(0); await draw(1);
+    for (const l of [0.55, 1]) await draw(l);
+    // 2) jede Abdeckung, jeden Belag einmal zeichnen (Textur-Upload)
+    const cov0 = state.cover, c0 = state.coping, d0 = state.deck;
+    for (const c of Object.keys(COVER)) { pool.setCover(c); await draw(0); await draw(1); } pool.setCover(cov0);
+    for (const k of Object.keys(DECK)) { if (k === 'gras') { state.deck = k; rebuild(); await settle(); await draw(0); } }      // Variante ohne Terrasse einmal bauen
+    // 3) zurück in den Ausgangszustand
+    state.coping = c0; state.deck = d0; if (!swapStone()) { rebuild(); }
+    Object.assign(state.extras, JSON.parse(ex0)); buildExtrasNow(); await settle();
+    // 4) Endzustand (Standardausstattung inkl. Pflanzen) in allen Beleuchtungsstufen: genau diese Shader braucht der erste Tageszeitwechsel
+    post.setGlow(true); post.setAA(aa0); for (const l of [1, 0.55, 0]) await draw(l);
+    post.setGlow(g0); await draw(TIME[t0].lamp);
+    if (!safe) { runProbe(); post.render(0); }
   } catch (e) { console.warn('Aufwärmen übersprungen', e); }
+  finally { warming = false; ui.refresh = uiRefresh; ui.refresh(); ui.sync(); invalidateAR(); }
 }
 
 /* ---------- Start ---------- */
@@ -711,8 +773,8 @@ tick('vor ui');
 ui = initUI(api);
 track('start', { w: innerWidth, mobile: isMobile });
 await paint(); rebuild(); tick('pool+garten+zubehoer'); ld.stage('Himmel wird berechnet …', 0.55); await paint();
-await setTime(state.time); tick('himmel'); ld.stage('Alle Tageszeiten werden vorbereitet …', 0.7);
-await prepareTimes(); await modelsReady(); await whenLoaded(18000);
+await setTime(state.time); tick('himmel'); ld.stage('Szene wird aufgeräumt …', 0.7);
+await modelsReady(); await whenLoaded(18000);
 ld.stage('Grafik wird vorbereitet …', 0.85); await paint(); await warmup(); tick('aufgewärmt');
 ld.stage('Letzte Schritte …', 0.9); sceneReady && sceneReady();
 if (isSheet()) { $('#cfg').classList.add('collapsed'); $('#b-panel').textContent = 'Konfigurieren ▴'; $('#b-panel').setAttribute('aria-expanded', 'false'); }
@@ -730,4 +792,4 @@ async function bench(n = 25) {        // echte GPU-Zeit je Frame (Timer-Query, C
   }
   ts.sort((x, y) => x - y); return ts[n >> 1];
 }
-if (params.has('debug')) window.__app = { bench, THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api, mats, post, stage, perf, setScale, probe, createProbe };
+if (params.has('debug')) window.__app = { gpuClass, PROFILE, benchGPU: () => benchGPU(renderer), bench, THREE, scene, camera, controls, renderer, state, rebuild, views, ui, get pool() { return pool; }, get garden() { return garden; }, get extras() { return extras; }, setTime, buildAR, ar, api, mats, post, stage, perf, setScale, probe, createProbe, runProbe, applyTime, timeRes, setLamps, lampLights, buildPool, buildExtras, matSet };

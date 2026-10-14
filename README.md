@@ -44,6 +44,8 @@ Firmenname, Farbe, Logo und Anfrage-Adresse kommen per Link (siehe unten). Weite
 | `lite` | Sparmodus erzwingen (kein Wolken-Himmel, keine Schatten) | `&lite` |
 
 Komplett: `https://DEINE-DOMAIN/?firma=Schmidt-Pool&farbe=%230a6ebd&mail=anfrage@schmidt-pool.de`
+| `class` | Geräteklasse erzwingen (`high`, `mid`, `low`; sonst automatisch per Grafiktest) | `&class=mid` |
+| `safe` | Sicherheitsmodus (niedrige Klasse, kein Rasen/Spiegelung) | `&safe=1` |
 | `q` | Start-Stufe: `high` (Standard: AO, Glow), `medium` (ohne AO), `low` (nichts); `scale=0.8` feste Auflösung, `fixed` Regler aus | `&q=medium` |
 
 | `katalog` | Firmen-Datei (Name oder https-URL) | `&katalog=spa` |

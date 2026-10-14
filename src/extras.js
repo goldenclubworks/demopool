@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { spanAt, COPING_W, DECK_W } from './pool.js';
 import { flowTexture } from './textures.js';
 import { pbr, loadModel } from './assets.js';
+import { fixPlantMaterial } from './plants.js';
 
 let shared = null;
 function sharedMats() {
@@ -93,15 +94,18 @@ export function buildExtras(state, pool, mats, mode = 'scene') {
   }
 
   /* Pflanzen in den Terrassenecken (Poly-Haven-Modelle, auf Zielhöhe skaliert) */
-  if (x.planters) {
+  if (x.planters && !ar) {                                          // in AR ohne Topfpflanzen: 70.000 Dreiecke je Pflanze sprengen die Datei (und das Modell wird asynchron angehängt)
     const corners = [[hx - 0.6, hz - 0.6], [-hx + 0.6, hz - 0.6], [hx - 0.6, -hz + 0.6], [-hx + 0.6, -hz + 0.6]];
     corners.forEach(([cx, cz], i) => {
-      loadModel(i % 2 ? 'potted_plant_02' : 'potted_plant_04').then((src) => {
+      const big = i % 2 === 1, id = big ? 'potted_plant_02' : 'potted_plant_04';
+      Promise.all([loadModel(id), big ? loadModel('potted_plant_02_lod') : null]).then(([near, far]) => {
         if (dead) return;
-        const m = src.clone(), bb = new THREE.Box3().setFromObject(m), h = bb.max.y - bb.min.y, s = (i % 2 ? 0.95 : 0.85) / h;
-        m.scale.setScalar(s); m.position.set(cx, topY - bb.min.y * s, cz); m.rotation.y = i * 1.9;
-        m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (o.material.alphaTest > 0 || o.material.alphaMap || o.material.transparent) { o.material.alphaTest = 0.5; o.material.transparent = false; o.material.alphaToCoverage = true; } } });
-        m.userData.gltf = true; group.add(m);
+        const prep = (src) => { const m = src.clone(); m.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material = fixPlantMaterial(o.material.clone()); } }); return m; };
+        const m = prep(near), bb = new THREE.Box3().setFromObject(m), h = bb.max.y - bb.min.y, s = (big ? 0.95 : 0.85) / h;
+        // große Pflanze (70.000 Dreiecke): ab 7 m Abstand wird die Stufe mit 30 % der Dreiecke gezeichnet (ab dieser Entfernung nicht zu unterscheiden)
+        const holder = new THREE.LOD(); holder.addLevel(m, 0); if (far) holder.addLevel(prep(far), 7);
+        holder.scale.setScalar(s); holder.position.set(cx, topY - bb.min.y * s, cz); holder.rotation.y = i * 1.9;
+        holder.userData.gltf = true; group.add(holder);
       });
     });
   }
