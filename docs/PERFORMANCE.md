@@ -87,3 +87,21 @@ Beim Prüfen der live Seite gefunden und behoben:
 - **Start-Kalibrierung mit GPU-Zeitmesser konnte sich aufhängen** (bei 4K in Chrome 31 s). Ersetzt durch eine **Vorhersage der Start-Auflösung aus dem Grafiktest** (3 ms + 2,8 ms je Megapixel, durch die Geräteklasse geteilt): kein Warten, in jedem Browser gleich.
 - **Zu unscharfer Start** (80/58/52 %) und sehr langsame Rückkehr zur vollen Schärfe (nur bei Bedienung, 14 Messungen je Stufe): jetzt **Probe im Leerlauf** – alle 1,5 s eine Stufe höher rendern und 30 Bilder messen; reicht es, bleibt es, sonst zurück mit 45 s Ruhe. Von 52 % auf 100 % in ca. 7 s.
 - **Pixelbudget galt nicht bei Pixeldichte 1** (4K-Monitor renderte immer volle 8,3 MP): Budget jetzt auch dort wirksam (Desktop 6,5 MP, Untergrenze 50 %).
+
+## Fotorealismus-Runde (Oktober 2026)
+**Licht:** Die Sonne steckte doppelt in der Szene – als Licht mit Schatten und verschmiert im Umgebungslicht des Panoramas. Für das Umgebungslicht wird die Sonnenscheibe jetzt herausgerechnet (Helligkeit auf das 4-fache des mittleren Himmels gedeckelt). Ergebnis: klare, lange Schatten. Sonne/Umgebung/Belichtung neu abgestimmt (Tag 4,5 / 0,8 / 0,85, Azimut 125° seitlich-vorn; Abend tiefe warme Sonne 11°, Azimut 150°).
+**Rasen:** Statt einzelner Halmbüschel („Stacheln“) Shell-Gras: 12 / 9 / 6 Halmschichten (high/mid/low-Handy), nur auf einer Scheibe um die Kamera (7,5 m), Halme werden vor der Beleuchtung verworfen. Bildfüllende Schichten kosteten bis 10 ms (Füllrate) – die Scheibe kostet in der Übersicht nichts, in Augenhöhe ca. 1,5 ms.
+**Gefundene Fehler:** (1) FXAA lief im selben Durchgang wie Tone-Mapping und las das HDR-Bild – bei Nacht überschrieb es den Glow um helle Lampen als dunkle Scheiben → FXAA jetzt eigener Durchgang danach. (2) n8ao suchte jedes Bild nach durchsichtigen Materialien und zeichnete die Szene dann zusätzlich zweimal → Automatik aus. (3) Glow-Weichzeichnung: drei Paare mit wachsendem Radius in eigenen kleinen Zielen (rund statt Klötzchen). (4) Im Entwicklungsmodus brach der Start mit `?fixed` ab (`started` vor der Deklaration gelesen) – im Build unsichtbar.
+
+**Messmethode – wichtig:** Auf Apple-GPUs (Metal über ANGLE) zählt `EXT_disjoint_timer_query` bei mehreren Durchgängen Leerlauf mit (Glow erschien mit +9 ms, tatsächlich ~1 ms). Belastbar ist die Wandzeit mit Synchronisation (`readPixels` nach jedem Bild), Median aus 20, bestes von 5 Läufen (der Rechner hatte parallel andere GPU-Last).
+
+| M1, 2600×1624 (4,2 MP), high | Übersicht | Augenhöhe | Blick über den Rasen |
+|---|---|---|---|
+| Tag | 11,6 ms | 14,7 ms | 18,2 ms |
+| Abend | 14,6 ms | 16,8 ms | 21,0 ms |
+| Nacht | 13,9 ms | 16,7 ms | 20,9 ms |
+| Handy-Größe 780×1688, high / mid | 6–8 ms | 7–12 ms | 6–12 ms |
+
+Über 16,7 ms senkt der Regler zuerst die Auflösung (z. B. 0,9 → 3,4 MP). Echte Handys sind 2–4× langsamer als der M1 – dort greift der Regler entsprechend; nicht auf Geräten gemessen. Bildprüfung (`npm run check:render`) in Chrome, Safari-Engine und Firefox bei 1×/2×/3× und drei Größen: überall Bild.
+
+**Bäume (prozedural statt Kugelkronen):** verzweigtes Astgerüst (ein Mesh) + Laubwolken um die Zweigspitzen (ein instanziertes Mesh, ca. 6.000 Karten statt 11.000 je Baum). Messwerte oben schon mit den neuen Bäumen.

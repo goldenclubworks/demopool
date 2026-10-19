@@ -85,6 +85,26 @@ function findSun(t) {
   return { dir, color: col, peak: max, horizon: hz };
 }
 
+/** Kopie des Panoramas OHNE Sonnenscheibe (Helligkeit gedeckelt) – nur für das Umgebungslicht.
+ *  Sonst steckt die Sonne doppelt in der Szene: als schattenwerfendes Licht UND verschmiert im Umgebungslicht,
+ *  das hellt jeden Schatten auf und das Bild wirkt wie bei Hochnebel. Grenze: ein Vielfaches der mittleren Himmelshelligkeit. */
+export function sunlessTexture(t, factor = 4) {
+  if (!t.image || !t.image.data) return t;                         // Ersatzhimmel (Canvas): hat keine Sonnenscheibe
+  const { data, width: w, height: h } = t.image, half = data instanceof Uint16Array;
+  const from = half ? THREE.DataUtils.fromHalfFloat : (v) => v, to = half ? THREE.DataUtils.toHalfFloat : (v) => v;
+  let sum = 0, n = 0;
+  for (let y = 0; y < h / 2; y += 2) for (let x = 0; x < w; x += 4) { const i = (y * w + x) * 4; sum += 0.2126 * from(data[i]) + 0.7152 * from(data[i + 1]) + 0.0722 * from(data[i + 2]); n++; }
+  const limit = Math.max(0.05, (sum / Math.max(n, 1)) * factor);
+  const out = new data.constructor(data.length); out.set(data);
+  for (let i = 0; i < out.length; i += 4) {
+    const l = 0.2126 * from(out[i]) + 0.7152 * from(out[i + 1]) + 0.0722 * from(out[i + 2]);
+    if (l > limit) { const k = limit / l; out[i] = to(from(out[i]) * k); out[i + 1] = to(from(out[i + 1]) * k); out[i + 2] = to(from(out[i + 2]) * k); }
+  }
+  const c = new THREE.DataTexture(out, w, h, t.format, t.type); c.mapping = THREE.EquirectangularReflectionMapping; c.colorSpace = t.colorSpace;
+  c.minFilter = THREE.LinearFilter; c.magFilter = THREE.LinearFilter; c.generateMipmaps = false; c.flipY = t.flipY; c.needsUpdate = true;
+  return c;
+}
+
 /* ---------- glTF ---------- */
 /* Pflanzen-Modelle laufen über denselben Manager: der Preloader wartet auf sie, nichts erscheint später „nachgeladen“. Fehlt ein Modell, wird es übersprungen. */
 const gltfCache = new Map();

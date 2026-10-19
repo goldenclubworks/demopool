@@ -111,7 +111,7 @@ export function createMaterials({ aniso = 8, isMobile = false } = {}) {
   const grassSet = pbr('grass', { metersPerTile: 1.8, aniso, rough: false });
   const ground = new THREE.MeshStandardMaterial({ map: grassSet.map, normalMap: grassSet.normalMap, color: new THREE.Color(0.55, 0.74, 0.40), roughness: 1, metalness: 0, transparent: true });
   ground.normalScale.set(0.8, 0.8);
-  const noiseTex = macroNoiseTexture();
+  const noiseTex = macroNoiseTexture(); ground.userData.noise = noiseTex;          // auch für das Shell-Gras (lawn.js): gleiche Flecken
   ground.onBeforeCompile = (sh) => {
     sh.uniforms.uNoise = { value: noiseTex };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', VPOS).replace('#include <begin_vertex>', VPOS_SET);

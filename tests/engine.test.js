@@ -25,11 +25,21 @@ describe('Beckengeometrie', () => {
   }
 });
 
-describe('Rasenhalme', () => {
-  it('werden nur außerhalb der Terrasse verteilt und sind endlich', () => {
-    const l = buildLawn({ hx: 6, hz: 4 }, { count: 3000 }), m = new THREE.Matrix4(), v = new THREE.Vector3();
-    expect(l.count).toBeGreaterThan(500);
-    for (let i = 0; i < l.count; i++) { l.getMatrixAt(i, m); v.setFromMatrixPosition(m); expect(Number.isFinite(v.x + v.y + v.z)).toBe(true); expect(Math.abs(v.x) > 6 || Math.abs(v.z) > 4).toBe(true); }
+describe('Rasen (Shell-Gras)', () => {
+  const ground = () => { const g = new THREE.MeshStandardMaterial({ color: 0x88aa66 }); g.userData.noise = new THREE.Texture(); return g; };
+  it('Schichtzahl je Qualitätsstufe, Höhen aufsteigend bis 6 cm, Terrasse ausgespart', () => {
+    for (const [count, layers] of [[15000, 12], [7000, 9], [3500, 6]]) {
+      const l = buildLawn({ hx: 6, hz: 4 }, { count, ground: ground() }), m = new THREE.Matrix4(), v = new THREE.Vector3();
+      expect(l.count).toBe(layers);
+      let prev = 0;
+      for (let i = 0; i < l.count; i++) { l.getMatrixAt(i, m); v.setFromMatrixPosition(m); expect(Number.isFinite(v.y)).toBe(true); expect(v.y).toBeGreaterThan(prev); expect(v.y).toBeLessThanOrEqual(0.0601); prev = v.y; }
+      expect(l.material.userData.u.uDeck.value.toArray()).toEqual([6, 4]);
+      expect(finite(l.geometry)).toBe(true);
+      l.dispose();
+    }
+  });
+  it('schwache Geräte (low) und fehlender Boden: kein Rasen, nichts kaputt', () => {
+    for (const l of [buildLawn({ hx: 6, hz: 4 }, { count: 0, ground: ground() }), buildLawn({ hx: 6, hz: 4 }, { count: 15000 })]) { expect(l.isInstancedMesh).not.toBe(true); expect(() => l.dispose()).not.toThrow(); }
   });
 });
 

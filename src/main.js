@@ -8,7 +8,7 @@ import { createMaterials } from './materials.js';
 import { createPost } from './post.js';
 import { createProbe } from './probe.js';
 import { benchGPU, classify } from './devicebench.js';
-import { loadHDRI, onProgress, whenLoaded, modelsReady, texturesReady } from './assets.js';
+import { loadHDRI, sunlessTexture, onProgress, whenLoaded, modelsReady, texturesReady } from './assets.js';
 import { buildPool, groundGeometry, patchGeometry } from './pool.js';
 import { buildExtras } from './extras.js';
 import { buildGarden } from './garden.js';
@@ -157,9 +157,9 @@ const sun = new THREE.DirectionalLight(0xffeedd, 3); sun.castShadow = true; scen
 sun.shadow.intensity = 0.9; sun.shadow.mapSize.set(PROFILE.shadow, PROFILE.shadow); sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
 // az: gewünschte Himmelsrichtung der Sonne (Grad, in der x-z-Ebene), damit Wasser und Becken von der Kamerarichtung aus schön beleuchtet sind
 const TIME = {
-  day: { hdri: 'day', fog: 0.0062, grass: 0.8, az: 205, exp: 0.95, env: 0.95, sun: 2.5, bg: 1, lamp: 0, caus: 1, light: 1 },
-  evening: { hdri: 'evening', fog: 0.0075, grass: 0.8, az: 215, exp: 0.8, env: 0.85, sun: 2.2, bg: 1, lamp: 0.55, caus: 0.45, light: 0.45 },
-  night: { hdri: 'night', fog: 0.007, grass: 0.8, az: 150, exp: 1.15, env: 0.55, sun: 0.55, sunCol: 0x9db4ff, bg: 1, lamp: 1, caus: 0.25, light: 0.07 },
+  day: { hdri: 'day', fog: 0.0062, grass: 0.8, az: 125, exp: 0.85, env: 0.8, sun: 4.5, bg: 1, lamp: 0, caus: 1, light: 1 },     // Sonne seitlich-vorn (Azimut 125°): Schatten und Formen von der Hauptansicht lesbar
+  evening: { hdri: 'evening', fog: 0.0075, grass: 0.8, az: 150, elev: 11, sunCol: 0xff9a66, exp: 0.85, env: 0.55, sun: 6, bg: 1, lamp: 0.55, caus: 0.45, light: 0.45 },   // tiefe, warme Sonne von vorn-links: lange Schatten, goldene Kanten
+  night: { hdri: 'night', fog: 0.007, grass: 0.8, az: 150, exp: 1.2, env: 0.65, sun: 0.55, sunCol: 0x9db4ff, bg: 1, lamp: 1, caus: 0.25, light: 0.07 },
 };
 let skybox = null, envToken = 0, curTime = 'day';
 const timeRes = {}, timeJobs = {};                  // je Tageszeit: fertig vorbereitete Teile (Himmel, Umgebungslicht, Kulisse) bzw. laufende Vorbereitung (nie doppelt)
@@ -190,8 +190,9 @@ function prepareTime(key, slow = false) {
     const t = TIME[key], h = await loadHDRI(t.hdri); await gap();
     const rot = Math.atan2(h.sun.dir.z, h.sun.dir.x) - THREE.MathUtils.degToRad(t.az);        // Drehung der Kulisse um y, damit die Sonne bei az steht
     const dir = h.sun.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+    if (t.elev !== undefined) { const e = THREE.MathUtils.degToRad(t.elev), az = THREE.MathUtils.degToRad(t.az); dir.set(Math.cos(e) * Math.cos(az), Math.sin(e), Math.cos(e) * Math.sin(az)); }   // feste Sonnenhöhe (z. B. Abend: das Panorama ist dort überbelichtet, die Suche fände den hellen Himmel statt der tiefen Sonne)
     renderer.initTexture(h.texture); await gap();                                               // Himmel-Textur jetzt hochladen, nicht beim Umschalten
-    const env = pmrem.fromEquirectangular(h.texture); await gap();
+    const envSrc = sunlessTexture(h.texture), env = pmrem.fromEquirectangular(envSrc); if (envSrc !== h.texture) envSrc.dispose(); await gap();   // Umgebungslicht ohne Sonnenscheibe (die Sonne kommt als Licht mit Schatten)
     const sky = makeSky(h, t, rot);
     return (timeRes[key] = { h, t, rot, dir, env, sky });
   })().finally(() => { delete timeJobs[key]; }));
@@ -310,7 +311,7 @@ function rebuild() {
   patch.geometry.dispose(); patch.geometry = patchGeometry(pool.contour);
   if (!garden) {                                                  // Hecke, Bäume, Beete: einmal für die größte Terrasse gebaut – Modellwechsel baut sie nicht neu
     const free = state.model === 'frei' || params.has('frei'), L = Math.max(free ? 16 : 0, state.length, ...MODELS.map((m) => m.length)), W = Math.max(free ? 6.5 : 0, state.width, ...MODELS.map((m) => m.width));
-    garden = buildGarden({ minX: -L / 2, maxX: L / 2, minZ: -W / 2, maxZ: W / 2 }, { isMobile, lawn: PROFILE.lawn, hedge: PROFILE.hedge, tree: PROFILE.tree }); stage.add(garden.group);
+    garden = buildGarden({ minX: -L / 2, maxX: L / 2, minZ: -W / 2, maxZ: W / 2 }, { isMobile, lawn: PROFILE.lawn, hedge: PROFILE.hedge, tree: PROFILE.tree, ground: groundMat }); stage.add(garden.group);
   }
   garden.fit(pool.bounds);
   garden.group.visible = state.garden;
@@ -702,6 +703,7 @@ function perfStep(ms) {                                          // ms = mittler
   }
 }
 /* ---------- Größe & Schleife ---------- */
+const samples = []; let warm = 60, started = false, assetsDone = false, clock = 0, sceneReady = null;   // vor resize(): wird dort schon gelesen
 function resize() {
   const w = innerWidth, h = innerHeight;
   if (w === lastW && h === lastH && dpr === lastDpr) { layout(true); return; }
@@ -714,7 +716,6 @@ addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(resize, 1
 resize();
 new ResizeObserver(() => layout()).observe($('#cfg'));
 const timer = new THREE.Timer();
-const samples = []; let warm = 60, started = false, assetsDone = false, clock = 0, sceneReady = null;
 { // Preloader: sobald alle Dateien da sind und die Szene steht, kalibrieren und enthüllen; spätestens nach 20 s wird enthüllt (Dateien, die nicht kommen, blockieren nicht)
   onProgress(ld.files);
   Promise.all([whenLoaded(18000), new Promise((r) => { sceneReady = r; })]).then(async () => { ld.stage('Letzte Schritte …', 0.9); await paint(); assetsDone = true; });

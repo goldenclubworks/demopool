@@ -84,7 +84,7 @@ export function buildGarden(maxBounds, opts = {}) {
     const A = mk(adaptiveGeos, adaptive), { hx: ax, hz: az } = half(bounds);
     if (lawnOn && (opts.lawn ?? 1) > 0) {                          // Rasenhalme etwas später (nächster Takt): der Umbau eines Modells bleibt so auf einem Bild, das alte Rasenstück liegt bis dahin weiter
       const tok = ++lawnTok;
-      setTimeout(() => { if (!alive || tok !== lawnTok) return; const l = buildLawn({ hx: ax + 0.1, hz: az + 0.1 }, { count: opts.lawn ?? (isMobile ? 6000 : 15000) }); if (lawnMesh) { group.remove(lawnMesh); lawnMesh.dispose(); } lawnMesh = l; group.add(l); }, 30);
+      setTimeout(() => { if (!alive || tok !== lawnTok) return; const l = buildLawn({ hx: ax + 0.1, hz: az + 0.1 }, { count: opts.lawn ?? (isMobile ? 6000 : 15000), ground: opts.ground }); if (lawnMesh) { group.remove(lawnMesh); lawnMesh.dispose(); } lawnMesh = l; group.add(l); }, 30);
     }
     const sw = ax * 2, sz = -az - 0.05, sy = 1.85, slatH = 0.145, gapH = 0.012, n = Math.floor(sy / (slatH + gapH)), F = rng(7);
     /* Sichtschutz: horizontale Holzlamellen zwischen anthrazitfarbenen Pfosten; dunkle Rückwand, damit die schmalen Spalten dunkel wirken statt als helle Strichelchen zu flimmern */

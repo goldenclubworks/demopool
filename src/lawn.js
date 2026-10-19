@@ -1,44 +1,58 @@
-// Rasenhalme rund um die Terrasse: instanziierte Büschel (4 Halme je Büschel), ruhig (kein Wind), mit Verlauf von dunkel (Wurzel) nach hell (Spitze).
-// Dichte nimmt nach außen ab; der Boden darunter (Fototextur) trägt den Rest. Wird mit der Terrassengröße neu verteilt (wenige Millisekunden).
+// Rasen als „Shell“-Gras: N übereinanderliegende Ebenen (eine Zeichnung, instanziert) über dem Boden. Jede Ebene zeigt nur die
+// Halm-Querschnitte, die bis zu ihrer Höhe reichen – zusammen ergibt das dichten, kurzen Rasen (4,5 cm) statt einzelner Büschel.
+// Farbe und Textur sind dieselben wie beim Boden darunter (gleiche UVs, gleiche Flecken/Mähstreifen), nach oben heller, unten dunkler.
+// Kosten: Pixel werden früh verworfen (vor der Beleuchtung); nur im Umkreis der Kamera (uFar), unter der Terrasse nichts.
 import * as THREE from 'three';
-import { rng } from './textures.js';
 
-let geo = null;
-function tuftGeometry() {
-  if (geo) return geo;
-  const R = rng(99), pos = [], col = [], nor = [], idx = [], blades = 4, seg = 3;
-  for (let b = 0; b < blades; b++) {
-    const a = R() * Math.PI * 2, ox = (R() - 0.5) * 0.05, oz = (R() - 0.5) * 0.05, h = 0.8 + R() * 0.45, bend = 0.25 + R() * 0.4, w = 0.0062 + R() * 0.002, base = pos.length / 3;
-    const ca = Math.cos(a), sa = Math.sin(a);
-    for (let i = 0; i <= seg; i++) {
-      const t = i / seg, y = t * h * 0.062, out = bend * t * t * 0.035, ww = w * (1 - t * 0.9);
-      for (const side of [-1, 1]) {                                  // zwei Ränder des Halms, Breite quer zur Biegerichtung
-        pos.push(ox + ca * out - sa * ww * side, y, oz + sa * out + ca * ww * side); nor.push(0, 1, 0);
-        const k = 0.2 + 0.8 * t; col.push(0.2 + 0.24 * k, 0.3 + 0.34 * k, 0.1 + 0.1 * k);
-      }
-    }
-    for (let i = 0; i < seg; i++) { const q = base + i * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
-  }
-  geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.setIndex(idx);
-  return geo;
+const H = 0.06;                                    // Halmhöhe in Metern (gemähter Rasen)
+const mats = new Map();
+function shellMaterial(ground) {
+  if (mats.has(ground)) return mats.get(ground);
+  const m = new THREE.MeshStandardMaterial({ map: ground.map, color: ground.color.clone(), roughness: 1, metalness: 0 });     // ohne Normal-Map: Halme sind zu schmal dafür, spart Zeit
+  const U = m.userData.u = { uNoise: { value: ground.userData.noise }, uDeck: { value: new THREE.Vector2() }, uFar: { value: 12 }, uDens: { value: 105 }, uH: { value: H } };
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying float vLayer; uniform float uH;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz; vLayer = instanceMatrix[3].y / uH;\nvMapUv = (mapTransform * vec3(vWPos.x, -vWPos.z, 1.0)).xy;   // Textur in Weltkoordinaten: die Scheibe wandert mit der Kamera, das Muster bleibt liegen');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vWPos; varying float vLayer; uniform sampler2D uNoise; uniform vec2 uDeck; uniform float uFar, uDens;
+      float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+      vec2 h22(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+      float gTint;`)
+      // früh verwerfen (vor Texturen und Licht): unter der Terrasse, außerhalb der Reichweite, kein Halm an dieser Stelle
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+      if (abs(vWPos.x) < uDeck.x && abs(vWPos.z) < uDeck.y) discard;
+      float dCam = length(vWPos.xz - cameraPosition.xz);
+      if (dCam > uFar) discard;
+      vec2 gp = vWPos.xz * uDens, cell = floor(gp), f = fract(gp) - 0.5 - (h22(cell) - 0.5) * 0.45;
+      float hgt = (0.3 + 0.7 * h12(cell + 7.1)) * (1.0 - smoothstep(uFar * 0.55, uFar, dCam));     // Halmhöhe; zur Reichweite hin flacher (weicher Übergang zum Boden)
+      if (vLayer > hgt) discard;
+      float ang = h12(cell + 3.7) * 6.2832; vec2 rf = vec2(cos(ang) * f.x - sin(ang) * f.y, sin(ang) * f.x + cos(ang) * f.y);
+      if (length(rf * vec2(1.0, 2.4)) > 0.46 * (1.0 - vLayer / max(hgt, 0.001))) discard;              // schmaler, spitz zulaufender Halm
+      gTint = h12(cell + 11.3);`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      vec3 nz = texture2D(uNoise, vWPos.xz / 160.0).rgb, nm = texture2D(uNoise, vWPos.xz / 23.0 + 0.37).rgb;
+      float stripe = 0.5 + 0.5 * sin(vWPos.x * 1.7 + 6.0 * nz.b);
+      diffuseColor.rgb *= (0.82 + 0.4 * nm.g) * mix(vec3(0.7, 0.86, 0.52), vec3(1.1, 1.08, 0.82), clamp((nz.r * 0.6 + nm.r * 0.4 - 0.5) * 1.7 + 0.35, 0.0, 1.0)) * (0.95 + 0.07 * stripe);
+      diffuseColor.rgb *= mix(0.4, 1.2, vLayer) * (0.8 + 0.4 * gTint) * mix(vec3(1.0), vec3(0.86, 1.08, 0.72), vLayer);   // unten im Halmdickicht dunkel, Spitzen hell und frischer grün
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 1.06, 0.78), smoothstep(0.75, 1.0, vLayer) * gTint);   // einzelne trockenere Spitzen`);
+  };
+  mats.set(ground, m);
+  return m;
 }
-let mat = null;
 
-/** deck: Halbmaße der Terrasse (hx, hz); Büschel nur außerhalb, bis `reach` Meter nach außen */
-export function buildLawn({ hx, hz }, { count = 14000, reach = 6.5, seed = 3 } = {}) {
-  mat = mat || new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-  const g = tuftGeometry(), mesh = new THREE.InstancedMesh(g, mat, count), R = rng(seed), m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), s = new THREE.Vector3(), c = new THREE.Color();
-  let n = 0;
-  for (let tries = 0; tries < count * 3 && n < count; tries++) {
-    const x = (R() * 2 - 1) * (hx + reach), z = (R() * 2 - 1) * (hz + reach);
-    // Abstand zum Terrassenrechteck (außerhalb), Dichte fällt quadratisch ab
-    const dx = Math.max(Math.abs(x) - hx, 0), dz = Math.max(Math.abs(z) - hz, 0), d = Math.hypot(dx, dz);
-    if (d < 0.08 || d > reach) continue; if (R() > (1 - d / reach) ** 1.9) continue;
-    e.set(0, R() * 6.28, 0); q.setFromEuler(e); const sc = 0.8 + R() * 0.9; s.set(sc, sc * (0.7 + R() * 0.8), sc);
-    m.compose(v.set(x, -0.005, z), q, s); mesh.setMatrixAt(n, m);
-    const k = 0.8 + R() * 0.4; mesh.setColorAt(n, c.setRGB(k * (0.9 + R() * 0.15), k, k * (0.85 + R() * 0.2))); n++;
-  }
-  mesh.count = n; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+/** deck: Halbmaße der Terrasse (hx, hz); ground: Boden-Material (Textur, Farbe, Rauschen). count wählt die Schichtzahl (Qualitätsstufe). */
+export function buildLawn({ hx, hz }, { count = 15000, ground } = {}) {
+  const layers = count >= 15000 ? 12 : count >= 7000 ? 9 : count >= 3500 ? 6 : 0;
+  if (!layers || !ground) { const e = new THREE.Group(); e.dispose = () => {}; return e; }
+  const m = shellMaterial(ground); m.userData.u.uDeck.value.set(hx, hz); m.userData.u.uFar.value = layers >= 12 ? 7.5 : 5.5;          // weiter weg sind Halme kleiner als ein Pixel: dort trägt die Bodentextur allein
+  const R = m.userData.u.uFar.value, g = new THREE.CircleGeometry(R, 48).rotateX(-Math.PI / 2);     // nur eine Scheibe um die Kamera (sonst kosten 12 bildfüllende Ebenen viel Füllrate)
+  const mesh = new THREE.InstancedMesh(g, m, layers), M4 = new THREE.Matrix4();
+  for (let i = 0; i < layers; i++) mesh.setMatrixAt(i, M4.makeTranslation(0, ((i + 1) / layers) * H, 0));
+  mesh.instanceMatrix.needsUpdate = true;
   mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.name = 'rasenhalme';
+  const v = new THREE.Vector3();
+  mesh.onBeforeRender = (r, sc, cam) => { v.setFromMatrixPosition(cam.matrixWorld); if (mesh.parent) mesh.parent.worldToLocal(v); mesh.position.set(v.x, 0, v.z); mesh.updateMatrixWorld(); };
+  const base = mesh.dispose.bind(mesh); mesh.dispose = () => { base(); g.dispose(); };
   return mesh;
 }
